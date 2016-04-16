@@ -1,0 +1,7 @@
+1.# Click My Personal Information in Salesforce and then check box;
+         Development Mode
+         Enable View State to see View State errors. Use transient variable, use html tags instead of apex tags as much as possible to avoid 
+                view state errors.
+  #
+  
+  
