@@ -2,6 +2,10 @@
          Development Mode
          Enable View State to see View State errors. Use transient variable, use html tags instead of apex tags as much as possible to avoid 
                 view state errors.
-  #
+2.# For Debuging
+        Enable for 24 hrs
+        Enter SFDC Console for debug log
+        
+     
   
   
