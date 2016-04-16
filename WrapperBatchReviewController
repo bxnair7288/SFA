@@ -1,0 +1,368 @@
+public class WrapperBatchReviewController {
+
+    //-------------------------------------------------------------------------------------
+    // Author : bxne - 07/2/2015
+    // Desc : Controller class for BatchReview Page.
+    //        Allows E&IM Reviewer and Program Managers to review Projects in grid format
+    //        and flag E&IM Review complete to True.
+    //        E&IM Reviewer's are allowed to review and flag Repeat Participation to Yes/No
+    //        Program Managers' are allowed to review Reviewer Adjustments to true/false.
+    //        This scrren also displays project measures, project area and double-dipping info.
+    // bxne - 12/24/2015
+    //        Case 6185 - Modified page navigation logic because of View state errors.
+    //        Also changed the Double-dip count logic.
+    // bxne - 2/29/2016
+    //        Case 7495 - Fix for Too Many query rows - 50001 error.
+    //-------------------------------------------------------------------------------------
+
+    public List<wrapProject> lstWrapProject{get;set;}
+    //public ApexPages.StandardSetController setCon{get; set;}
+    public string currentProfile{get;set;}
+    Map<Id,Integer> mapDoubleDip;
+    private List<eo3__Ecology_Project__c>lstEcology;
+    public list<selectoption>lstProject{get;set;}
+    public list<selectoption> lstmarketChannel {set;get;}
+
+    public string selectProject{get;set;}
+    public string sortDirection{get;set;}
+    public string selectChannel{get;set;}
+
+    public map<Id,String> mapsubcontractor{get;set;}
+    public date fromDate{set;get;}
+    public date toDate{set;get;}
+    public Set<String> marketChannelSet = new Set<String>();
+
+    private integer totalRecs = 0;
+    private integer index = 0;
+    private integer pageSize = 25;
+    private list<eo3__Ecology_Project__c>ecologyList;
+
+    public Integer currentPage{get;set;}
+    public Integer totalRowsCount{get;set;}
+
+    public WrapperBatchReviewController() {
+
+        currentProfile = [select Profile.Name from User where Id = :Userinfo.getUserId()].Profile.Name;
+
+      //  lstProject = new list<selectoption>();
+        lstmarketChannel = new list<selectoption>();
+
+      //  lstProject.add(new selectoption('--None--','--None--'));
+        lstmarketChannel.add(new selectoption('none','--None--'));
+
+        Schema.DescribeFieldResult fieldResult = eo3__Portfolio__c.eo3__Type__c.getDescribe();
+        List<Schema.PicklistEntry> ple = fieldResult.getPicklistValues();
+
+        for(Schema.PicklistEntry f : ple) {
+            lstmarketChannel.add(new SelectOption(f.getValue(), f.getLabel()));
+            marketChannelSet.add(f.getValue());
+        }
+
+        selectChannel = 'none';
+        sortDirection='asc';
+
+        PopulateValues();
+    }
+
+
+    public void save() {
+
+        profile profilename = [select id,name from profile where Id =: userinfo.getProfileId()];
+        list<eo3__Ecology_Project__c>lstUpdateProject = new list<eo3__Ecology_Project__c>();
+
+        for(wrapProject wrapRecord : lstWrapProject){
+            if(wrapRecord.selected == true){
+                if (wrapRecord.ecoProject.E_IM_Reviewer__c == null && wrapRecord.ecoProject.Repeat_Participation_Detection_Yes_No__c == 'No' && profilename != null && profilename.name == 'Platform - E&IM Reviewer') {
+                       wrapRecord.ecoProject.E_IM_Reviewer__c = UserInfo.getUserID();
+                }
+                if(wrapRecord.ecoProject.E_IM_Reviewer_Adjustment__c == 'No' && wrapRecord.ecoProject.Repeat_Participation_Detection_Yes_No__c == 'No') {
+                    wrapRecord.ecoProject.E_IM_Review__c = true;
+                }
+                else {
+                    wrapRecord.ecoProject.E_IM_Review__c = false;
+                }
+                system.debug('##122915.....'+ wrapRecord.ecoproject.id);
+                lstUpdateProject.add(wrapRecord.ecoProject);
+            }
+        }
+
+        if(!lstUpdateProject.isEmpty()) {
+            List<Database.SaveResult>updateResults = Database.update(lstUpdateProject, false);
+            String failedId = '';
+
+            for(Integer i=0;i<updateResults.size();i++){
+                if (updateResults.get(i).isSuccess()){
+                    updateResults.get(i).getId();
+                }
+                else if (!updateResults.get(i).isSuccess()){
+                    Database.Error error = updateResults.get(i).getErrors().get(0);
+                    String failedDML = error.getMessage();
+                    failedId = '<a target="_blank" href="/'+lstUpdateProject.get(i).id+'">'+ lstUpdateProject.get(i).name + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><BR/>';
+                    failedId = failedId + error.getMessage();
+                    ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error,failedId));
+                }
+            }
+        }
+
+        populateValues();
+    }
+
+   public void PopulateValues() {
+
+        currentPage = 0;
+        totalRowsCount = 0;
+        totalRecs = 0;
+
+        lstEcology = new list<eo3__Ecology_Project__c>();
+        lstWrapProject = new List<wrapProject>();
+        string sortDir = ApexPages.currentPage().getParameters().get('sortDir');
+        mapDoubleDip = new map<Id,Integer>();
+        mapsubcontractor = new map<Id,string>();
+
+        lstProject = new list<selectoption>();
+        lstProject.add(new selectoption('--None--','--None--'));
+
+        Set<Id> recordTypeIdSet = new Set<Id>();
+        Set<String> recordTypes = AP_RecordType_Mapping__c.getAll().keySet();
+
+        for(String s :recordTypes ) {
+            if(Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().containsKey(s)) {
+              Id recId = Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().get(s).getRecordTypeId();
+              recordTypeIdSet.add(recId);
+            }
+        }
+
+        if(sortDir == 'toggle'){
+            if(sortDirection == 'asc')
+            sortDirection = 'desc';
+            else
+            sortDirection = 'asc';
+        }
+
+        //Load all available Programs to the filter list.
+        list<eo3__Ecology_Project__c>lstEco = [Select id,eo3__Program__c,eo3__Program__r.name from eo3__Ecology_Project__c WHERE RecordtypeId IN : recordTypeIdSet AND E_IM_Review__c != True AND Action_Currently_Required_from__c = 'E&IM Reviewer' AND (Repeat_Participation_Detection_Yes_No__c = 'No' OR E_IM_Reviewer_Adjustment__c = 'No' OR Repeat_Participation_Detection_Yes_No__c = null OR E_IM_Reviewer_Adjustment__c = null)];
+        if(!lstEco.isEmpty()){
+            set<Id>setProgramId = new set<Id>();
+            for(eo3__Ecology_Project__c proj : lstEco){
+                if(!setProgramId.contains(proj.eo3__Program__c))
+                   lstProject.add(new selectoption(proj.eo3__Program__c,proj.eo3__Program__r.name));
+                   setProgramId.add(proj.eo3__Program__c);
+            }
+        }
+
+        //Create Select Query string for Retrieval
+        string query ='SELECT Id, eo3__Description__c, (select id from Double_Dip_Results__r), E_IM_Reviewer__c, Project_Cap_Adjustment__c,eo3__Program__r.name, eo3__Program__r.Market_Channel__c, Financing_Application__r.Name, Performance_Payment__c, eo3__Total_Incentive_Amount__c, Data_Entry_Complete_Date__c, SAID__c, Total_Uncapped_Incentive_Amount_Curr__c, EE_Project_Cost__c, eo3__Site_new__r.name, Name, Repeat_Participation_Detection_Yes_No__c, E_IM_Reviewer_Adjustment__c, E_IM_Review__c, Action_Currently_Required_from__c, RecordtypeId, eo3__Program__c, eo3__Project_ID__c,(SELECT Id, eo3__Utility_Measure_Code__c, eo3__Technology_Type__c, Measure_Area__c, eo3__Rebate__c,End_Use_Category__c,eo3__Total_Quantity__c,eo3__Measure__c,kW_Savings__c,kWh_Savings__c,Therms_Savings__c from eo3__Tasks__r), Total_Therms_Savings__c,Total_kWh_Savings__c,Total_kW_Savings__c,Financing_Application__c from eo3__Ecology_Project__c ';
+        string whereClause = 'WHERE RecordtypeId IN : recordTypeIdSet AND E_IM_Review__c != True AND Action_Currently_Required_from__c = \'E&IM Reviewer\' AND (Repeat_Participation_Detection_Yes_No__c = \'No\' OR E_IM_Reviewer_Adjustment__c = \'No\' OR Repeat_Participation_Detection_Yes_No__c = null OR E_IM_Reviewer_Adjustment__c = null)';
+
+        if(selectProject != null && selectProject !='' && selectProject !='--None--'){
+            whereClause = whereClause + 'AND eo3__Program__c =: selectProject ';
+        }
+
+        if(selectChannel != null && selectChannel == 'none') {
+            whereClause = whereClause + 'AND eo3__Program__r.Market_Channel__c IN: marketChannelSet ';
+        }
+        else {
+            whereClause = whereClause + 'AND eo3__Program__r.Market_Channel__c =: selectChannel ';
+        }
+
+        if(fromDate != null) {
+             whereClause = whereClause + 'AND Data_Entry_Complete_Date__c >=: fromDate ';
+        }
+
+        if(toDate != null) {
+             whereClause = whereClause + 'AND Data_Entry_Complete_Date__c <=: toDate ';
+        }
+
+        //Get total number of Projects
+        //case 7495 - Get total count
+        string queryTotal ='SELECT Count() from eo3__Ecology_Project__c ';
+        string queryTotalRecs = queryTotal+whereClause;
+        system.debug('###A___'+queryTotalRecs);
+
+        if(queryTotalRecs != null && queryTotalRecs !=''){
+            totalRecs = database.countQuery(queryTotalRecs);
+        }
+
+        /*
+        string queryTotalRecs = query+whereClause;
+        if(queryTotalRecs != null && queryTotalRecs !=''){
+            List<eo3__Ecology_Project__c>lstEcologyCount = (List<eo3__Ecology_Project__c>)database.query(queryTotalRecs);
+            if(!lstEcologyCount.isEmpty())
+                totalRecs = lstEcologyCount.size();
+        }
+        */
+        system.debug('###0___'+totalRecs+'___'+index+'____'+pageSize);
+
+        //whereClause = whereClause+' order by eo3__Program__r.name '+sortDirection + ' limit 350';
+        //Query using LIMIT of 25 and offset
+        whereClause = whereClause+' order by eo3__Program__r.name '+sortDirection+' LIMIT '+pageSize+' OFFSET '+index;
+        string finalQuery = query+whereClause;
+        lstEcology = (List<eo3__Ecology_Project__c>)database.query(finalQuery);
+
+        system.debug('###1___'+lstEcology.size()+'___'+index+'____'+pageSize);
+
+        if(!lstEcology.isEmpty()){
+
+            system.debug('###Before(totalrecs/index/currentpage)___'+totalrecs +'___'+index+'____'+currentpage);
+            if ((totalrecs - index) < 25) {
+               currentpage = totalrecs;
+            } else {
+               if (index == 0)
+                 currentpage = 25;
+               else
+                 currentpage = index + 25;
+            }
+            system.debug('###After(totalrecs/index/currentpage)___'+totalrecs +'___'+index+'____'+currentpage);
+
+            totalRowsCount = totalrecs;
+
+            Set<Id> setProgramId = new Set<Id>();
+            for(eo3__Ecology_Project__c ecoProj : lstEcology){
+               for(eo3__custom_tasks__c customTask : ecoProj.eo3__Tasks__r){
+                   mapsubcontractor.put(customTask.Id,'');
+                }
+
+                //mapDoubleDip.put(ecoProj.Id,0)
+                lstWrapProject.add(new wrapProject(ecoProj));
+
+                /*if(!(selectProject != null && selectProject !='')){
+                    if(!setProgramId.contains(ecoProj.eo3__Program__c))
+                    lstProject.add(new selectoption(ecoProj.eo3__Program__c,ecoProj.eo3__Program__r.name));
+                    setProgramId.add(ecoProj.eo3__Program__c);
+                }*/
+            }
+             if(!mapsubcontractor.isEmpty()){
+                 list<eo3__Subcontractor_Reported_Measures__c>lstSubContractor = [select id,eo3__Task__c,eo3__Area__r.name from eo3__Subcontractor_Reported_Measures__c where eo3__Task__c IN : mapsubcontractor.keySet()];
+                 if(!lstSubContractor.isEmpty()){
+                     for(eo3__Subcontractor_Reported_Measures__c subContractor : lstSubContractor){
+                         if(mapsubcontractor.containsKey(subContractor.eo3__Task__c) && subContractor.eo3__Area__r.name != null && subContractor.eo3__Area__r.name !=''){
+                            mapsubcontractor.put(subContractor.eo3__Task__c,subContractor.eo3__Area__r.name);
+                         }
+                     }
+                 }
+             }
+             /* list<Double_Dip_Results__c>lstDoubleDip = [select id, Current_Project_Id__c from Double_Dip_Results__c where Current_Project_Id__c IN : mapDoubleDip.keySet()];
+                if(!lstDoubleDip.isEmpty()){
+                    for(Double_Dip_Results__c doubleDip : lstDoubleDip){
+                        if(!mapDoubleDip.isEmpty()){
+                            if(mapDoubleDip.containsKey(doubleDip.Current_Project_Id__c)){
+                                integer relatedRecord = mapDoubleDip.get(doubleDip.Current_Project_Id__c);
+                                mapDoubleDip.put(doubleDip.Current_Project_Id__c,relatedRecord+1);
+                            }
+                        }
+                    }
+                }
+              */
+        }
+    }
+
+    public void filterProgram() {
+       index = 0;
+       PopulateValues();
+    }
+
+    //Wrapper Class
+    public class wrapProject{
+        public eo3__Ecology_Project__c ecoProject{get; set;}
+        public Boolean selected {get; set;}
+      //public integer doubleDipCount{get;set;}
+        public string mainArea {get;set;}
+
+        public wrapProject (eo3__Ecology_Project__c proj) {
+            ecoProject = proj;
+            selected = false;
+          //doubleDipCount = count;
+            mainArea = 'Main Project Area';
+        }
+    }
+
+    public pagereference cancel(){
+        pagereference pg = new pagereference('/apex/batchreview');
+        pg.setredirect(true);
+        return pg;
+    }
+
+    //New Logic
+    public void beginning(){
+        index = 0;
+        PopulateValues();
+    }
+
+    public void previous(){
+        index = index - pageSize;
+        PopulateValues();
+    }
+
+    public void next(){
+        system.debug ('in NEXT');
+        index = index + pageSize;
+        PopulateValues();
+    }
+
+    public void end() {
+        if(math.mod(totalRecs,pageSize)==0)
+           index= totalrecs -pageSize;
+        else
+           index = totalrecs - math.mod(totalRecs,pageSize);
+        PopulateValues();
+    }
+
+    public boolean getprev(){
+        if(index == 0)
+           return true;
+        else
+           return false;
+    }
+
+    public boolean getnxt(){
+        if (index + pageSize >= totalrecs)
+           return true;
+        else
+           return false;
+    }
+    /*
+    // OLD LOGIC for page navigation
+    //Boolean to check if there are more records after the present displaying records
+    public Boolean hasNext{
+        get{
+            return setcon.getHasNext();
+        }
+        set;
+    }
+
+    //Boolean to check if there are more records before the present displaying records
+    public Boolean hasPrevious{
+        get{
+            return setcon.getHasPrevious();
+        }
+        set;
+    }
+
+    //Page number of the current displaying records
+    public Integer pageNumber{
+        get{
+            return setcon.getPageNumber();
+        }
+        set;
+    }
+
+    //Returns the previous page of records
+    public void previous(){
+        setcon.previous();
+    }
+
+    //Returns the next page of records
+    public void next(){
+        setcon.next();
+    }
+    // returns the first page of records
+    public void first() {
+        setcon.first();
+    }
+
+    // returns the last page of records
+    public void last() {
+        setcon.last();
+    }
+    */
+}
