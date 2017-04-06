@@ -1,0 +1,140 @@
+@isTest
+private class WrapperBatchReviewControllerTest {
+//bxne-8/6/2015
+    static testMethod void WrapperBatchTestPositive() {
+    
+        Schema.DescribeSObjectResult pfSchemaResult = Schema.SObjectType.eo3__Portfolio__c;
+        Map<String,Schema.RecordTypeInfo> mapPfTypeInfo = pfSchemaResult.getRecordTypeInfosByName();
+        String strPortfolioRecType = mapPfTypeInfo.get('Portfolio').getRecordTypeId();
+        
+         // Custom Setting - Project Reference
+        List<Project_Reference_CS__C> projCustSetting = PG_E_TestDataUtility.createProjectReferenceCustomSetting();
+        insert projCustSetting ;
+        
+        
+        List<AP_RecordType_Mapping__c> batchreviewRecordTypeList = new List<AP_RecordType_Mapping__c>();
+        AP_RecordType_Mapping__c apm = new AP_RecordType_Mapping__c(Name='Custom - New Residential Construction');
+        batchreviewRecordTypeList.add(apm);
+        
+        AP_RecordType_Mapping__c apm1 = new AP_RecordType_Mapping__c(Name='Deemed - 3P / Direct Install');
+        batchreviewRecordTypeList.add(apm1);
+        
+        AP_RecordType_Mapping__c apm2 = new AP_RecordType_Mapping__c(Name='Deemed - PG&E Sales');
+        batchreviewRecordTypeList.add(apm2);
+        
+        insert batchreviewRecordTypeList;
+ 
+        Id deemedRecordTypeId = Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().get('Deemed - 3P / Direct Install').getRecordTypeId();
+       
+        //insert portfolio
+        eo3__Portfolio__c m_portfolio = new eo3__Portfolio__c(Name='MyPortfolio',eo3__Type__c='PG&E Sales',RecordTypeId=strPortfolioRecType);
+        insert m_portfolio;
+        
+        //insert program rows
+        eo3__program__c m_programs = new eo3__program__c (name = 'Eng Audit',eo3__program_code__c = 'AUD0001', eo3__Portfolio__c =
+        m_portfolio.Id);
+        insert m_programs;
+        
+        eo3__eoSite__c eosite = TestDataUtility.createEoSite();
+        eosite.eo3__Electric_SAID_Code__c = '0000000000';
+        eosite.eo3__External_ID__c = '000011111';
+        insert eosite;
+
+        eo3__Ecology_Project__c projectRecord = TestDataUtility.createproject(eoSite.id);
+        projectRecord.name = 'Test Project';
+        projectRecord.eo3__Program__c = m_programs.id;
+        projectRecord.eo3__Project_ID__c = 'N/A';
+        projectRecord.recordTypeId = deemedRecordTypeId;
+        
+        projectRecord.Action_Currently_Required_from__c = 'E&IM Reviewer';
+        projectRecord.Repeat_Participation_Detection_Yes_No__c ='No';
+        projectRecord.E_IM_Reviewer_Adjustment__c = 'No';
+
+        insert projectRecord;
+        
+        eo3__Climate_Vintage__c climateVintage = new eo3__Climate_Vintage__c();
+        climateVintage.eo3__Type__c = 'ANY';
+        climateVintage.eo3__Climate_Zone__c ='ANY';
+        climateVintage.eo3__Vintage__c = 'ANY';
+        climateVintage.Cost_Qualifier__c = 'I';
+        climateVintage.eo3__Measure_Code__c = 'N/A';
+        climateVintage.ISR__c = 0.5;
+        climateVintage.NTG__c = 0.5;
+        insert climateVintage;
+        
+        //insert umc
+        eo3__Utility_Measure_Code__c m_umc = new eo3__Utility_Measure_Code__c(Name='N/A',eo3__External_ID__c='N/A');
+        insert m_umc;
+        
+        eo3__Custom_Tasks__c customTask = new eo3__Custom_Tasks__c(
+        Name='Test - ' + Datetime.now(),
+        eo3__Project__c = projectRecord.Id,
+        eo3__Utility_Measure_Code__c = m_umc.Id,
+        eo3__Climate_and_Vintage__c = climateVintage.Id,
+       // eo3__Program_Measure__c  = m_programMeasure.id,
+        Invoice_Date__c=system.today()
+        );
+        customTask.Total_Number_of_Units_Purchased__c = 10;
+        insert customTask;
+        
+        Double_Dip_Results__c  doubleDip = new Double_Dip_Results__c();
+        doubleDip.Current_Project_Id__c = projectRecord.Id;
+        insert doubleDip;
+        
+        eo3__Area__c areaRecord = new eo3__Area__c();
+        areaRecord.Name = 'Main Area Project';
+        insert areaRecord;
+        
+        eo3__Subcontractor_Reported_Measures__c subContractor = new eo3__Subcontractor_Reported_Measures__c();
+        subContractor.eo3__Task__c = customTask.Id;
+        subContractor.eo3__Current_Project__c = projectRecord.Id;
+        subContractor.eo3__Area__c= areaRecord.Id;  
+        subContractor.eo3__Quantity_high_prec__c = 2.4;
+        insert subContractor;
+        
+        WrapperBatchReviewController.wrapProject wrapRecord = new WrapperBatchReviewController.wrapProject(projectRecord);
+        wrapRecord.selected = true;
+        
+        list<WrapperBatchReviewController.wrapProject>wrapList = new list<WrapperBatchReviewController.wrapProject>();
+        wrapList.add(wrapRecord);
+        
+        test.startTest();
+            WrapperBatchReviewController wrapClass = new WrapperBatchReviewController();
+            wrapClass.lstWrapProject.addall(wrapList);
+            wrapClass.fromDate = System.Today();
+            wrapClass.toDate = System.Today()+5;
+            System.currentPageReference().getParameters().put('sortDir', 'asc');
+            wrapClass.PopulateValues();
+            System.currentPageReference().getParameters().put('sortDir', 'desc');
+            wrapClass.selectProject = m_programs.Id;
+            wrapClass.selectChannel = 'none';
+            wrapClass.PopulateValues();
+            //wrapClass.lstWrapProject.add(wrapRecord); 
+            //List<WrapperBatchReviewController.wrapProject> wrapObjects = wrapClass.getWrapRecords(); 
+            //wrapClass.pageNumber=1;
+            wrapClass.beginning();
+           // wrapClass.previous();
+            wrapClass.next();
+            
+          //  wrapClass.end();
+            wrapClass.getprev();
+            wrapClass.getnxt();
+            
+            wrapClass.filterProgram();
+            WrapperBatchReviewController.wrapProject wrapRecord1 = new WrapperBatchReviewController.wrapProject(projectRecord);
+            wrapRecord1.selected = true;
+            wrapClass.lstWrapProject.add(wraprecord1);
+            
+            /*
+            projectRecord.Action_Currently_Required_from__c = 'No';
+            projectRecord.Repeat_Participation_Detection_Yes_No__c = 'No';
+            update projectRecord;
+            */
+            
+            //wrapRecord.selected = true;
+            //wrapClass.lstWrapProject[0].selected = true;
+            wrapClass.save();       
+            wrapClass.cancel();
+        test.stopTest();
+    }
+}

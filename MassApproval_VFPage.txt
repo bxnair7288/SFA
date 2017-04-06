@@ -1,0 +1,274 @@
+<apex:page controller="MassApprovalPageController">
+    
+    <head>
+        <style>
+            .headerRow {
+                    background-color: #333399 !important;
+                    color: white !important;
+                }
+            .projBorder{
+                border-top: 1px solid black !important;
+            }
+            h1 {
+                font-family: Georgia,"Times New Roman",serif;
+                font-size: 12px;
+                font-weight: bold;
+                color: #600;
+                line-height: 22px;
+                margin: 0%;
+                text-transform: uppercase;
+                letter-spacing: 0px;
+                padding-top: 5px;
+                padding-left: 350px;
+                padding-bottom: 5px;
+             }     
+             h2 {
+                color:blue;
+                font-family:verdana;
+                font-size:100%;
+                }
+                
+            .noDisplayMsg{
+                font-family: initial;
+                font-weight: bold;
+                font-size: 15px;
+            }         
+        </style>
+    
+        <script>
+            function checkApproveAll(cb)
+            {
+                var inputElem = document.getElementsByTagName("input");
+                for(var i=0; i<inputElem.length; i++)
+                {
+                    if(inputElem[i].id.indexOf("checkApprovedone")!=-1)
+                    inputElem[i].checked = cb.checked;
+                }
+            }
+            function uncheckApproveHeader() {
+                var inputElem = document.getElementsByTagName('headerCheckApproveBox');
+                document.getElementById('{!$Component.frm.theBlock.theTable.headerCheckApproveBox}').checked = false;
+            }
+            function uncheckRejectHeader() {
+                var inputElem = document.getElementsByTagName('headerCheckRejectBox');
+                document.getElementById('{!$Component.frm.theBlock.theTable.headerCheckRejectBox}').checked = false;
+            }
+            function approveChecked(cb, approve_class_name) {
+            	
+            	var reject_class_name;
+            	var class_name_length = approve_class_name.length;
+            	if(approve_class_name.substring(class_name_length - 2, class_name_length - 1) == '_') {
+            		reject_class_name = 'reject_'+approve_class_name.substring(class_name_length - 1, class_name_length);
+            	}
+            	else {
+            		reject_class_name = 'reject_'+approve_class_name.substring(class_name_length - 2, class_name_length - 1);
+            	}
+            	
+            	if(cb.checked == true) {
+            		var inputElem = document.getElementsByTagName("input");
+					for(var i=0; i<inputElem.length; i++) {
+					    if (inputElem[i].className == reject_class_name) {
+					    	if(inputElem[i].checked == true) {
+					    		inputElem[i].checked = false;
+					    	}
+					    }
+				    }	
+				} 
+            }
+            function rejectChecked(cb, reject_class_name) {
+            	
+            	var approve_class_name;
+            	var class_name_length = reject_class_name.length;
+            	if(reject_class_name.substring(class_name_length - 2, class_name_length - 1) == '_') {
+            		approve_class_name = 'approve_'+reject_class_name.substring(class_name_length - 1, class_name_length);
+            	}
+            	else {
+            		approve_class_name = 'approve_'+reject_class_name.substring(class_name_length - 2, class_name_length - 1);
+            	}
+            	
+            	if(cb.checked == true) {
+            		var inputElem = document.getElementsByTagName("input");
+					for(var i=0; i<inputElem.length; i++) {
+					    if (inputElem[i].className == approve_class_name) {
+					    	if(inputElem[i].checked == true) {
+					    		inputElem[i].checked = false;
+					    	}
+					    }
+				    }	
+				} 
+            }
+        </script>
+    </head>
+    
+    <apex:form id="frm">
+    
+        <apex:pagemessages id="msg" escape="false"/>
+        
+        <apex:actionfunction name="changeVal" action="{!OnChangeMethod}" rerender="theBlock" status="StatusId"/>
+        <apex:actionfunction name="sortVal" action="{!sortBasedOnColumn}" rerender="theBlock" status="StatusId">
+            <apex:param name="sortDir" value=""/>
+        </apex:actionFunction>
+        
+        <h1> Mass Approval Process </h1>
+        <br></br>
+        
+        <apex:pageBlock id="theBlock">
+        
+            <apex:pageBlockButtons > 
+                <apex:commandButton value="Submit" action="{!save}" reRender="frm,msg" status="StatusId" onComplete="uncheckApproveHeader();uncheckRejectHeader();return false;"/>
+                <apex:commandButton value="Cancel" action="{!Cancel}" /> 
+                <br/>
+                <br/>
+                <apex:outputlabel value="Filter by Program: " style="font-weight: bold;margin-left: -104px;"/>
+                <apex:selectList value="{!selectProject}" multiselect="false" size="1" onchange="changeVal();return false;" style="height:25px;">
+                  <apex:selectOptions value="{!lstProject}" />
+                </apex:selectList>     
+                <apex:actionStatus id="StatusId" >
+                    <apex:facet name="start" >
+                      <img src="/img/loading.gif" />          
+                    </apex:facet> 
+                </apex:actionStatus>
+            </apex:pageBlockButtons>
+             
+            <apex:variable value="{!1}" var="i"/>
+            <apex:pageBlockTable value="{!WrapRecords}" var="projects" styleClass="projTable" id="theTable">
+             
+                <apex:column styleClass="projBorder" headerValue="Sr.No">
+                    <h2><apex:outputText value="{!projects.serialNo}"/></h2>  
+                </apex:column>
+                
+                <apex:column styleClass="projBorder">
+                    <apex:facet name="header"> 
+                        <apex:inputCheckbox onclick="checkApproveAll(this)" id="headerCheckApproveBox"/>
+                        <!--Approve-->
+                    </apex:facet>
+                    <apex:inputCheckbox value="{!projects.selectedApprove}" id="checkApprovedone" styleClass="approve_{!projects.serialNo}" onclick="approveChecked(this, 'approve_'+{!projects.serialNo})" />
+                </apex:column>
+                
+                <apex:column styleClass="projBorder">
+                    <apex:facet name="header"> 
+                        <!--<apex:inputCheckbox onclick="checkRejectAll(this)" id="headerCheckRejectBox"/>-->
+                        Reject
+                    </apex:facet>
+                    <apex:inputCheckbox value="{!projects.selectedReject}" id="checkRejectdone" styleClass="reject_{!projects.serialNo}" onclick="rejectChecked(this, 'reject_'+{!projects.serialNo})" />
+                </apex:column>
+                
+                <apex:column headerValue="Rejection Reason" styleClass="projBorder">
+                    <apex:inputField value="{!projects.ecoProject.Deemed_Rejection_Reason__c}"/>
+                </apex:column>
+               
+                <apex:column headerValue="Review Complete" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.E_IM_Review__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="Project Id" styleClass="projBorder">
+                    <apex:outputField value="{!projects.ecoProject.eo3__Project_ID__c}"/>
+                </apex:column>
+                
+                <apex:column styleClass="projBorder" headervalue="Project Name">                   
+                   <apex:outputLink value="/{!projects.ecoProject.id}">{!projects.ecoProject.name}</apex:outputLink> 
+                   <apex:variable value="{!i+1}" var="i"/>
+                </apex:column>
+                
+                <apex:column styleClass="projBorder">
+                    <apex:facet name="header">
+                        <apex:commandLink onclick="sortVal('toggle'); return false;" value="Program Name" style="color:white;text-decoration: underline;"/>
+                    </apex:facet>
+                    <apex:outputfield value="{!projects.ecoProject.eo3__Program__c}" />
+                </apex:column>
+                
+                 <apex:column headerValue="Site Name" styleClass="projBorder">
+                    <apex:outputField value="{!projects.ecoProject.eo3__Site_new__r.name}"/>
+                </apex:column>
+                
+                <apex:column headerValue="SA ID" styleClass="projBorder">
+                    <apex:outputField value="{!projects.ecoProject.SAID__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="Double Dip Results" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.doubleDipCount}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Total_kW_Savings__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Total_kW_Savings__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Total_kWh_Savings__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Total_kWh_Savings__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Total_Therms_Savings__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Total_Therms_Savings__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Total_Uncapped_Incentive_Amount_Curr__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Total_Uncapped_Incentive_Amount_Curr__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.EE_Project_Cost__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.EE_Project_Cost__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Project_Cap_Adjustment__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Project_Cap_Adjustment__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.eo3__Total_Incentive_Amount__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.eo3__Total_Incentive_Amount__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Performance_Payment__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Performance_Payment__c}"/>
+                </apex:column>
+                
+                <apex:column headerValue="Financial Application" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Financing_Application__r.name}"/>
+                </apex:column>
+                
+                <apex:column headerValue="{!$ObjectType.eo3__Ecology_Project__c.fields.Data_Entry_Complete_Date__c.label}" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Data_Entry_Complete_Date__c}"/>
+                </apex:column>
+                
+                <!-- TO PUT BACK PROJECT MEASURE CHANGES IN CODE UNCOMMENT BELOW -- START -->
+                <!-- <apex:column breakBefore="true" colspan="8" style="bgcolor:black;margin-left:35%;">
+                    <apex:pageBlockTable value="{!projectPMMap[projects.ecoProject.id]}" var="measure" style="background-color:#E0E0E0;margin-left:20%;">
+                        <apex:column headervalue="Measure Code"
+                            value="{!measure.eo3__Utility_Measure_Code__c}"/>
+                        <apex:column headervalue="Measure Desc"
+                            value="{!measure.eo3__Measure__c}"/>
+                        <apex:column headervalue="Measure Type"
+                            value="{!measure.eo3__Technology_Type__c}"/>
+                        <apex:column headervalue="End Use Category" 
+                            value="{!measure.End_Use_Category__c}"/>
+                        <apex:column headervalue="Total Quantity"
+                            value="{!measure.eo3__Total_Quantity__c}"/>
+                        <apex:column headervalue="KW Savings"
+                            value="{!measure.kW_Savings__c}"/>
+                        <apex:column headervalue="KWh Savings"
+                            value="{!measure.kWh_Savings__c}"/>
+                        <apex:column headervalue="Therms Savings"
+                            value="{!measure.Therms_Savings__c}"/>
+                        <apex:column headervalue="Incentive"
+                            value="{!measure.eo3__Rebate__c}"/>
+                        <apex:column headervalue="Area">
+                            <apex:outputlabel value="{!mapsubcontractor[measure.Id]}"/>
+                        </apex:column>   
+                    </apex:pageBlockTable>
+                    
+                </apex:column>  -->
+                <!-- TO PUT BACK PROJECT MEASURE CHANGES IN CODE UNCOMMENT BELOW -- END -->
+            </apex:pageBlockTable>
+            
+            <apex:outputPanel id="myButtons">
+                <apex:commandButton action="{!Beginning}" title="Beginning" value="<<" disabled="{!disablePrevious}" reRender="theTable,myButtons"/>
+                <apex:commandButton action="{!Previous}" title="Previous" value="<" disabled="{!disablePrevious}" reRender="theTable,myButtons"/>        
+                <apex:commandButton action="{!Next}" title="Next" value=">" disabled="{!disableNext}" reRender="theTable,myButtons"/>
+                <apex:commandButton action="{!End}" title="End" value=">>" disabled="{!disableNext}" reRender="theTable,myButtons"/>
+                
+                <apex:outputText value="{!IF(WrapRecords.size>0,PageNumber,0)}"/> &nbsp; Of &nbsp;
+                <apex:outputText value="{!TotalPages}"/>
+            </apex:outputPanel>
+            
+        </apex:pageBlock>
+    </apex:form>
+</apex:page>

@@ -1,0 +1,213 @@
+<apex:page controller="WrapperBatchReviewController" docType="html-5.0">
+ <!--
+    //-------------------------------------------------------------------------------------------
+    //Author : bxne - 07/5/2015
+    //Desc : Page to interact with WrapperBatchReviewController to display Projects in batch mode.
+    //   Allows E&IM Reviewer and Program Managers to review Projects in grid format
+    //   and flag E&IM Review complete to True.
+    //   E&IM Reviewer's are allowed to review and flag Repeat Participation to Yes/No
+    //   Program Managers' are allowed to review Reviewer Adjustments to true/false.
+    //   This scrren also displays project measures, project area and double-dipping info.
+    // bxne - 7/24/2015 Changed navigation logic and double dip count.
+    // j3tx - 6/30/2016 - Case 8726 Added E&IM Reviewer profile
+    //-------------------------------------------------------------------------------------------
+    -->
+    <head>
+    <style>
+        .headerRow{
+            background-color: #333399 !important;
+            color: white !important;
+        }
+        .projBorder{
+            border-top: 1px solid black !important;
+        }
+    h1{
+        font-family: Georgia,"Times New Roman",serif;
+        font-size: 12px;
+        font-weight: bold;
+        color: #600;
+        line-height: 22px;
+        margin: 0%;
+        text-transform: uppercase;
+        letter-spacing: 0px;
+        padding-top: 5px;
+        padding-left: 350px;
+        padding-bottom: 5px;
+     }     
+     h2 {
+        color:blue;
+        font-family:verdana;
+        font-size:100%;
+        }         
+    </style>
+    <!--<script type="text/javascript">
+        $j = jQuery.noConflict();    
+        $j(document).ready(function () {
+        $j("[id$=theaddrs]").tablesorter();
+        });    
+    </script>-->
+    <script>
+        function checkBoxCheck(cls){
+            var aInputs = document.getElementsByTagName('input');
+            for (var i=0;i<aInputs.length;i++) {
+                if(aInputs[i].className == 'class'+cls){
+                    aInputs[i].checked=true;
+                } 
+            }
+        }
+        function selectallcheckbox(){
+            var aInputs = document.getElementsByTagName('input');
+            var aInputs1 = document.getElementsByTagName('select');            
+            for (var i=0;i<aInputs.length;i++) {
+                if (aInputs[i].className.indexOf('class') != -1) {
+                    aInputs[i].checked=true;
+                }                
+            }
+            for (var j=0;j<aInputs1.length;j++) {
+                if (aInputs1[j].className.indexOf('picklistVal') != -1) {
+                    aInputs1[j].value='No';
+                }
+            }
+            return false;
+        }
+    </script>
+</head>
+    <apex:form id="frm">
+        <apex:pagemessages id="msg" escape="false"/>
+        <apex:actionfunction name="changeVal" action="{!filterProgram}" rerender="frm" status="StatusId"/>
+        <apex:actionfunction name="sortVal" action="{!populateValues}" rerender="frm" status="StatusId">
+            <apex:param name="sortDir" value=""/>
+        </apex:actionFunction>
+        <h1> Batch Review Process </h1>
+        <br></br>
+        <apex:pageBlock id="pBlock">
+       
+            <apex:pageBlockButtons > 
+            
+                <apex:commandButton value="Reviewed and Approve" action="{!save}" reRender="frm,msg" status="StatusId" />
+                <apex:commandButton value="Select All" onclick="selectallcheckbox();return false;"/>
+                <!--<apex:commandButton value="Cancel" onclick="location.reload();" style="margin-right:40%"/>-->
+                <apex:commandButton value="Cancel" action="{!Cancel}" />   
+                <br/>
+                <br/>
+                
+               <div style="float:left; margin-left: -450px;">        
+                    <apex:actionStatus id="StatusId" >
+                        <apex:facet name="start" >
+                          <img src="/img/loading32.gif" />                    
+                        </apex:facet> 
+                    </apex:actionStatus>
+                </div> 
+                               
+                    <div style="float:left;margin-left: -400px;">
+                    <apex:outputlabel value="Filter by Program: " style="font-weight: bold;"/>
+                    <apex:selectList value="{!selectProject}" multiselect="false" size="1" onchange="changeVal();return false;" style="height:25px" >
+                      <apex:selectOptions value="{!lstProject}" />
+                    </apex:selectList>
+                    </div>
+                    
+                    <div style="float:left; margin-left: 0px;">
+                    <apex:outputlabel value="Market Channel: " style="font-weight: bold;"/>
+                    <apex:selectList value="{!selectChannel}" multiselect="false" size="1" onchange="changeVal();return false;" style="height:25px">
+                      <apex:selectOptions value="{!lstmarketChannel}" />
+                    </apex:selectList>
+                    </div>
+                    
+                    <div style="float:left; margin-left: 10px;">
+                    <apex:outputlabel value="Data Entry From: " style="font-weight: bold;"/>
+                    <apex:input type="date" value="{!fromDate}" onchange="changeVal();return false;"/>
+                    </div>
+                        
+                    <div style="float:left; margin-left: 10px;">
+                    <apex:outputlabel value="Data Entry To: " style="font-weight: bold;"/>
+                    <apex:input type="date" value="{!toDate}" onchange="changeVal();return false;"/>
+                    </div>    
+                
+                
+            </apex:pageBlockButtons>
+            
+            <apex:variable value="{!1}" var="i"/>
+            <apex:pageBlockTable value="{!lstWrapProject}" var="projects" styleClass="projTable" id="pbTable">
+                <apex:column styleClass="projBorder">
+                    <h2>{!i}</h2> 
+                </apex:column>
+                <apex:column styleClass="projBorder">
+                    <apex:inputcheckbox value="{!projects.selected}" styleClass="class{!i}"/>                    
+                </apex:column>
+                <apex:column style="color:#343434;font-size:22px;line-height:40px;"
+                    headerValue="Repeat Participation" styleClass="projBorder">
+                    <apex:inputfield value="{!projects.ecoProject.Repeat_Participation_Detection_Yes_No__c}" styleClass="picklistVal" rendered="{!IF(currentProfile = 'Program Mgr' ,false,true)}" onchange="checkBoxCheck('{!i}');return false;"/>
+                    <apex:outputtext value="{!projects.ecoProject.Repeat_Participation_Detection_Yes_No__c}" style="font-size: 70%;" rendered="{!IF(currentProfile = 'Program Mgr' ,true,false)}" />
+                </apex:column>
+                <apex:column headerValue="Reviewer Adjustment" styleClass="projBorder">
+                     <apex:inputfield value="{!projects.ecoProject.E_IM_Reviewer_Adjustment__c}" styleClass="picklistVal" rendered="{!IF(currentProfile = 'Platform - E&IM Reviewer'||currentProfile = 'E&IM Reviewer',false,true)}" onchange="checkBoxCheck('{!i}');return false;"/>
+                     <apex:outputtext value="{!projects.ecoProject.E_IM_Reviewer_Adjustment__c}" style="font-size: 70%;" rendered="{!IF(currentProfile = 'Platform - E&IM Reviewer'||currentProfile = 'E&IM Reviewer',true,false)}"/>
+                </apex:column>
+                <apex:column headerValue="Review Complete" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.E_IM_Review__c}"/>
+                </apex:column>
+                <apex:column value="{!projects.ecoProject.eo3__Project_ID__c}" styleClass="projBorder" />
+                <apex:column styleClass="projBorder" headervalue="Project Name">                   
+                   <apex:outputLink value="/{!projects.ecoProject.id}">{!projects.ecoProject.name}</apex:outputLink> 
+                   <apex:variable value="{!i+1}" var="i"/>
+                </apex:column>
+                <apex:column styleClass="projBorder">
+                    <apex:facet name="header">
+                        <apex:commandLink onclick="sortVal('toggle'); return false;" value="Program Name" style="color:white;text-decoration: underline;"/>
+                    </apex:facet>
+                    <apex:outputfield value="{!projects.ecoProject.eo3__Program__c}" />
+                </apex:column>
+                <apex:column value="{!projects.ecoProject.eo3__Site_new__r.name}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.SAID__c}" styleClass="projBorder"/>
+                <apex:column headerValue="Double Dip Results" styleClass="projBorder">
+                    <apex:outputlabel value="{!projects.ecoProject.Double_Dip_Results__r.size}"/>
+                </apex:column>
+                <apex:column value="{!projects.ecoProject.Total_kW_Savings__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Total_kWh_Savings__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Total_Therms_Savings__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Total_Uncapped_Incentive_Amount_Curr__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.EE_Project_Cost__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Project_Cap_Adjustment__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.eo3__Total_Incentive_Amount__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Performance_Payment__c}" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Financing_Application__r.name}" headervalue="Financial Application" styleClass="projBorder"/>
+                <apex:column value="{!projects.ecoProject.Data_Entry_Complete_Date__c}" styleClass="projBorder"/>
+                
+                <apex:column breakBefore="true" colspan="8"
+                    style="bgcolor:black;margin-left:35%;">
+                    <apex:pageBlockTable value="{!projects.ecoProject.eo3__Tasks__r}" var="measure"
+                        style="background-color:#E0E0E0;margin-left:20%;">
+                        <apex:column headervalue="Measure Code"
+                            value="{!measure.eo3__Utility_Measure_Code__c}"/>
+                        <apex:column headervalue="Measure Desc"
+                            value="{!measure.eo3__Measure__c}"/>
+                        <apex:column headervalue="Measure Type"
+                            value="{!measure.eo3__Technology_Type__c}"/>
+                        <apex:column headervalue="End Use
+                            Category" value="{!measure.End_Use_Category__c}"/>
+                        <apex:column headervalue="Total Quantity"
+                            value="{!measure.eo3__Total_Quantity__c}"/>
+                        <apex:column headervalue="KW Savings"
+                            value="{!measure.kW_Savings__c}"/>
+                        <apex:column headervalue="KWh Savings"
+                            value="{!measure.kWh_Savings__c}"/>
+                        <apex:column headervalue="Therms Savings"
+                            value="{!measure.Therms_Savings__c}"/>
+                        <apex:column headervalue="Incentive"
+                            value="{!measure.eo3__Rebate__c}"/>
+                        <apex:column headervalue="Area">
+                            <apex:outputlabel value="{!mapsubcontractor[measure.Id]}"/>
+                        </apex:column>   
+                    </apex:pageBlockTable>
+                </apex:column> 
+            </apex:pageBlockTable>
+                <apex:commandButton value="First" rerender="pBlock" action="{!beginning}" disabled="{!prev}"/>
+                <apex:commandButton value="Previous" rerender="pBlock" action="{!previous}" disabled="{!prev}"/>
+                <apex:commandButton value="Next" rerender="pBlock" action="{!next}" disabled="{!nxt}"/>
+                <apex:commandButton value="Last" rerender="pBlock" action="{!end}" disabled="{!nxt}"/>
+                <apex:outputText value="   ...   {!currentpage}"/>
+                <apex:outputText value="  of  {!totalRowsCount}"/> 
+        </apex:pageBlock>
+    </apex:form>   
+    
+</apex:page>

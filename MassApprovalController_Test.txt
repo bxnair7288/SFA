@@ -1,0 +1,402 @@
+/**************************************************************************************************   
+Apex Class Name      :  MassApprovalPageControllerTest
+Version              :  1.0                                                                          
+Created Date         :  Dec 12, 2015                                                               
+Function             :  Test class for MassApprovalPageController
+Story                :                                                                               
+Work Task            :                                                                               
+Modification Log     :                                                                               
+*--------------------------------------------------------------------------------------------------  
+* Developer                   Date                   Description                                     
+* -------------------------------------------------------------------------------------------------  
+* Naveen K Udatha             12/10/2015             First Iteration                                                    
+***************************************************************************************************/
+
+@isTest
+private class MassApprovalPageControllerTest{
+    
+    private static eo3__Portfolio__c m_portfolio;
+    private static eo3__program__c m_programs;
+    private static NAICS_Code__c testNAICSCode;
+    private static Account  m_acc;
+    private static eo3__eoSite__c testSite;
+    private static Contact oCon;
+    private static User u1;
+    private static eo3__Utility_Measure_Code__c m_umc;
+    private static eo3__Climate_Vintage__c climateVintage;
+    private static eo3__Ecology_Project__c testProject;
+    
+    private static void setUpData() {
+        
+        Schema.DescribeSObjectResult pfSchemaResult = Schema.SObjectType.eo3__Portfolio__c;
+        Map<String,Schema.RecordTypeInfo> mapPfTypeInfo = pfSchemaResult.getRecordTypeInfosByName();
+        String strPortfolioRecType = mapPfTypeInfo.get('Portfolio').getRecordTypeId();
+        
+        List<Project_Reference_CS__C> projCustSetting = PG_E_TestDataUtility.createProjectReferenceCustomSetting();
+        insert projCustSetting ;
+                                              
+        m_portfolio = new eo3__Portfolio__c(Name='MyPortfolio',eo3__Type__c='PG&E Sales',RecordTypeId=strPortfolioRecType);
+        insert m_portfolio;
+        
+        m_programs = new eo3__program__c (name = 'Commercial Deemed Incentives - Deemed Downstream',eo3__program_code__c = 'CODDNPGE13', eo3__Portfolio__c = m_portfolio.Id);
+        m_programs.eo3__Active__c = true;
+        m_programs.eo3__Program_Type__c = 'Deemed Downstream';
+        m_programs.Program_Classification__c = 'Deemed Downstream';
+        m_programs.Deemed_Mid_Upstream_programs__c = true;
+        insert m_programs;
+
+        testNAICSCode = new NAICS_Code__c();
+        testNAICSCode.Name = 'TEST CODE 2';
+        testNAICSCode.NAICS_Description__c = 'TEST NAICS CODE 2';
+        testNAICSCode.Sector__c = 'Commercial';
+        testNAICSCode.Sector_Code__c = 'COM';
+        testNAICSCode.Target_Market_Segment__c = 'Large Commercial';
+        testNAICSCode.Target_Market_Segment_Code__c = 'LCO';
+        insert testNAICSCode;
+
+        m_acc = new Account ();
+        m_acc.Name = 'Test Customer Account 2';
+        m_acc.AccountNumber = '2112-5150-OR812';
+        m_acc.eo3__Electric_SAID__c = '5150-2112-OR812';
+        m_acc.eo3__Gas_SAID__c = '5150-2112-OR813';
+        insert m_acc;
+
+        testSite = new eo3__eoSite__c();
+        testSite.Name='New Site 2';
+        testSite.eo3__Account__c = m_acc.Id;
+        testSite.eo3__Peak_Demand__c='< 100 kW';
+        testSite.eo3__Rate_Schedule__c='STANDARD';
+        testSite.SA_is_for_New_Construction_Project__c=False;
+        testSite.NAICS_Code_relation__c = testNAICSCode.Id;
+        insert  testSite;
+
+        oCon= new Contact();
+        oCon.LastName = 'Test Contact';
+        oCon.AccountId = m_acc.Id;
+        oCon.Is_Active__c = 'Y';
+        oCon.Phone = '(650) 567-1234';
+        oCon.Preferred_Contact_Method_Code__c = '1';
+        insert oCon;
+         
+        String profileID = [Select Id from Profile where Name = 'Platform - E&IM Reviewer'].Id;
+
+        String orgId = UserInfo.getOrganizationId();
+        String dateString = String.valueof(Datetime.now()).replace(' ','').replace(':','').replace('-','');
+        Integer randomInt = Integer.valueOf(math.rint(math.random()*1000000));
+        String uniqueName = orgId + dateString + randomInt;
+        
+        u1 =  new user (username = uniqueName + '@test' + orgId + '.org',
+                                 ProfileId = profileID,
+                                 alias = 'TPA123',
+                                 email = uniqueName + '@test' + orgId + '.org',
+                                 emailEncodingKey = 'UTF-8',
+                                 lastName = 'TP',
+                                 communityNickname = 'TPA123',
+                                 timeZoneSidKey = 'America/Los_Angeles',
+                                 localeSidKey = 'en_US',
+                                 languageLocaleKey = 'en_US');
+            
+        insert u1;
+        
+        m_umc = new eo3__Utility_Measure_Code__c(Name='N/A',eo3__External_ID__c='N/A');
+        insert m_umc;
+        
+        climateVintage = new eo3__Climate_Vintage__c();
+        climateVintage.eo3__Type__c = 'ANY';
+        climateVintage.eo3__Climate_Zone__c ='ANY';
+        climateVintage.eo3__Vintage__c = 'ANY';
+        climateVintage.Cost_Qualifier__c = 'I';
+        climateVintage.eo3__Measure_Code__c = 'N/A';
+        climateVintage.ISR__c = 0.5;
+        climateVintage.NTG__c = 0.5;
+        insert climateVintage;
+        
+        Id deemedRecordTypeId = Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().get('Deemed - PG&E Sales').getRecordTypeId();
+            
+        testProject = new eo3__Ecology_Project__c();
+        testProject.Name = 'Test Project - DeemedLetter' + Datetime.now();
+        testProject.RecordTypeId = deemedRecordTypeId;
+        testProject.Deemed_Program__c = m_programs.id;
+        testProject.eo3__Program__c = m_programs.id;
+        testProject.eo3__Site_new__c = testSite.Id ;
+        testProject.eo3__Primary_Project_Contact__c = oCon.id;
+        testProject.Application_Source__c = 'ES&S';
+        testProject.eo3__Project_Type__c = 'Deemed';
+        testProject.eo3__Project_Status__c = 'CIP';
+        insert testProject;
+    }
+
+    
+    static testMethod void MassApprovalPageApproveTest() {
+
+         setUpData();
+              
+         test.startTest();
+
+            eo3__Custom_Tasks__c customTask = new eo3__Custom_Tasks__c(
+                                                    Name='Test - ' + Datetime.now(),
+                                                    eo3__Project__c = testProject.Id,
+                                                    eo3__Utility_Measure_Code__c = m_umc.Id,
+                                                    eo3__Climate_and_Vintage__c = climateVintage.Id,
+                                                    Invoice_Date__c=system.today());
+            customTask.Total_Number_of_Units_Purchased__c = 10;
+            insert customTask;
+            
+           // Double_Dip_Results__c  doubleDip = new Double_Dip_Results__c();
+           // doubleDip.Current_Project_Id__c = testProject.Id;
+           // insert doubleDip;
+            
+            eo3__Area__c areaRecord = new eo3__Area__c();
+            areaRecord.Name = 'Main Area Project';
+            insert areaRecord;
+            
+            eo3__Subcontractor_Reported_Measures__c subContractor = new eo3__Subcontractor_Reported_Measures__c();
+            subContractor.eo3__Task__c = customTask.Id;
+            subContractor.eo3__Current_Project__c = testProject.Id;
+            subContractor.eo3__Area__c= areaRecord.Id;  
+            subContractor.eo3__Quantity_high_prec__c = 2.4;
+            insert subContractor;
+
+            Integer cnt = [select count() from eo3__Ecology_Project__c where id = :testProject.id];
+            System.assertEquals(1, cnt);
+
+            testProject.E_IM_Reviewer_Adjustment__c = 'Yes' ;
+            testProject.Approved_For_Payment__c = False ;
+            testProject.CIP_Status__c = 'Waived';
+            testProject.E_IM_Reviewer__c = u1.id;
+
+            update testProject;
+            
+            PageReference pageRef = Page.MassApprovalPage;
+            Test.setCurrentPageReference(pageRef);
+            ApexPages.currentPage().getParameters().put('sortDir','toggle');
+    
+            MassApprovalPageController approvalClass = new MassApprovalPageController();
+            List<MassApprovalPageController.wrapProject> wrapList = approvalClass.getWrapRecords();
+            
+            approvalClass.OnChangeMethod();
+            approvalClass.sortBasedOnColumn();
+            approvalClass.Beginning();
+            approvalClass.Previous();
+            approvalClass.Next();
+            approvalClass.End();
+            approvalClass.getDisablePrevious();
+            approvalClass.getDisableNext();
+            approvalClass.getTotal_size();
+            approvalClass.getPageNumber();
+            approvalClass.getTotalPages();
+            If (wrapList.size() > 0) 
+                 wrapList[0].selectedApprove = true;
+             approvalClass.save();
+            approvalClass.cancel();
+            
+        test.stoptest();  
+    } 
+    
+    
+    static testMethod void MassApprovalPageRejectTest() {
+
+         setUpData();
+              
+         test.startTest();
+
+            eo3__Custom_Tasks__c customTask = new eo3__Custom_Tasks__c(
+                                                    Name='Test - ' + Datetime.now(),
+                                                    eo3__Project__c = testProject.Id,
+                                                    eo3__Utility_Measure_Code__c = m_umc.Id,
+                                                    eo3__Climate_and_Vintage__c = climateVintage.Id,
+                                                    Invoice_Date__c=system.today());
+            customTask.Total_Number_of_Units_Purchased__c = 10;
+            insert customTask;
+            
+            Double_Dip_Results__c  doubleDip = new Double_Dip_Results__c();
+            doubleDip.Current_Project_Id__c = testProject.Id;
+            insert doubleDip;
+            
+            eo3__Area__c areaRecord = new eo3__Area__c();
+            areaRecord.Name = 'Main Area Project';
+            insert areaRecord;
+            
+            eo3__Subcontractor_Reported_Measures__c subContractor = new eo3__Subcontractor_Reported_Measures__c();
+            subContractor.eo3__Task__c = customTask.Id;
+            subContractor.eo3__Current_Project__c = testProject.Id;
+            subContractor.eo3__Area__c= areaRecord.Id;  
+            subContractor.eo3__Quantity_high_prec__c = 2.4;
+            insert subContractor;
+
+            Integer cnt = [select count() from eo3__Ecology_Project__c where id = :testProject.id];
+            System.assertEquals(1, cnt);
+
+            testProject.E_IM_Reviewer_Adjustment__c = 'Yes' ;
+            testProject.Approved_For_Payment__c = False ;
+            testProject.CIP_Status__c = 'Passed';
+            testProject.E_IM_Reviewer__c = u1.id;
+
+            update testProject;
+            
+            PageReference pageRef = Page.MassApprovalPage;
+            Test.setCurrentPageReference(pageRef);
+            ApexPages.currentPage().getParameters().put('sortDir','toggle');
+    
+            MassApprovalPageController approvalClass = new MassApprovalPageController();
+            List<MassApprovalPageController.wrapProject> wrapList = approvalClass.getWrapRecords();
+            
+            approvalClass.OnChangeMethod();
+            approvalClass.sortBasedOnColumn();
+            approvalClass.Beginning();
+            approvalClass.Previous();
+            approvalClass.Next();
+            approvalClass.End();
+            approvalClass.getDisablePrevious();
+            approvalClass.getDisableNext();
+            approvalClass.getTotal_size();
+            approvalClass.getPageNumber();
+            approvalClass.getTotalPages();
+            if (wrapList.size() > 0) {
+               wrapList[0].selectedReject = true;
+               wrapList[0].ecoProject.Deemed_Rejection_Reason__c = 'TEST REJECTION REASON'; }
+            approvalClass.save();
+            approvalClass.cancel();
+            
+        test.stoptest();  
+    } 
+    
+    
+    static testMethod void MassApprovalPageValidOneTest() {
+
+         setUpData();
+              
+         test.startTest();
+
+            eo3__Custom_Tasks__c customTask = new eo3__Custom_Tasks__c(
+                                                    Name='Test - ' + Datetime.now(),
+                                                    eo3__Project__c = testProject.Id,
+                                                    eo3__Utility_Measure_Code__c = m_umc.Id,
+                                                    eo3__Climate_and_Vintage__c = climateVintage.Id,
+                                                    Invoice_Date__c=system.today());
+            customTask.Total_Number_of_Units_Purchased__c = 10;
+            insert customTask;
+            
+            Double_Dip_Results__c  doubleDip = new Double_Dip_Results__c();
+            doubleDip.Current_Project_Id__c = testProject.Id;
+            insert doubleDip;
+            
+            eo3__Area__c areaRecord = new eo3__Area__c();
+            areaRecord.Name = 'Main Area Project';
+            insert areaRecord;
+            
+            eo3__Subcontractor_Reported_Measures__c subContractor = new eo3__Subcontractor_Reported_Measures__c();
+            subContractor.eo3__Task__c = customTask.Id;
+            subContractor.eo3__Current_Project__c = testProject.Id;
+            subContractor.eo3__Area__c= areaRecord.Id;  
+            subContractor.eo3__Quantity_high_prec__c = 2.4;
+            insert subContractor;
+
+            Integer cnt = [select count() from eo3__Ecology_Project__c where id = :testProject.id];
+            System.assertEquals(1, cnt);
+
+            testProject.E_IM_Reviewer_Adjustment__c = 'Yes' ;
+            testProject.Approved_For_Payment__c = False ;
+            testProject.CIP_Status__c = 'Passed';
+            testProject.E_IM_Reviewer__c = u1.id;
+
+            update testProject;
+            
+            PageReference pageRef = Page.MassApprovalPage;
+            Test.setCurrentPageReference(pageRef);
+            ApexPages.currentPage().getParameters().put('sortDir','toggle');
+    
+            MassApprovalPageController approvalClass = new MassApprovalPageController();
+            List<MassApprovalPageController.wrapProject> wrapList = approvalClass.getWrapRecords();
+            
+            approvalClass.OnChangeMethod();
+            approvalClass.sortBasedOnColumn();
+            approvalClass.Beginning();
+            approvalClass.Previous();
+            approvalClass.Next();
+            approvalClass.End();
+            approvalClass.getDisablePrevious();
+            approvalClass.getDisableNext();
+            approvalClass.getTotal_size();
+            approvalClass.getPageNumber();
+            approvalClass.getTotalPages();
+            If (wrapList.size() > 0) 
+                wrapList[0].selectedReject = true;
+            approvalClass.save();
+            ApexPages.Message[] pageMessages = ApexPages.getMessages();
+            //System.assertNotEquals(0, pageMessages.size());
+            approvalClass.cancel();
+            
+        test.stoptest();  
+    }
+    
+    
+    static testMethod void MassApprovalPageValidTwoTest() {
+
+         setUpData();
+              
+         test.startTest();
+
+            eo3__Custom_Tasks__c customTask = new eo3__Custom_Tasks__c(
+                                                    Name='Test - ' + Datetime.now(),
+                                                    eo3__Project__c = testProject.Id,
+                                                    eo3__Utility_Measure_Code__c = m_umc.Id,
+                                                    eo3__Climate_and_Vintage__c = climateVintage.Id,
+                                                    Invoice_Date__c=system.today());
+            customTask.Total_Number_of_Units_Purchased__c = 10;
+            insert customTask;
+            
+            Double_Dip_Results__c  doubleDip = new Double_Dip_Results__c();
+            doubleDip.Current_Project_Id__c = testProject.Id;
+            insert doubleDip;
+            
+            eo3__Area__c areaRecord = new eo3__Area__c();
+            areaRecord.Name = 'Main Area Project';
+            insert areaRecord;
+            
+            eo3__Subcontractor_Reported_Measures__c subContractor = new eo3__Subcontractor_Reported_Measures__c();
+            subContractor.eo3__Task__c = customTask.Id;
+            subContractor.eo3__Current_Project__c = testProject.Id;
+            subContractor.eo3__Area__c= areaRecord.Id;  
+            subContractor.eo3__Quantity_high_prec__c = 2.4;
+            insert subContractor;
+
+            Integer cnt = [select count() from eo3__Ecology_Project__c where id = :testProject.id];
+            System.assertEquals(1, cnt);
+
+            testProject.E_IM_Reviewer_Adjustment__c = 'Yes' ;
+            testProject.Approved_For_Payment__c = False ;
+            testProject.CIP_Status__c = 'Passed';
+            testProject.E_IM_Reviewer__c = u1.id;
+
+            update testProject;
+            
+            PageReference pageRef = Page.MassApprovalPage;
+            Test.setCurrentPageReference(pageRef);
+            ApexPages.currentPage().getParameters().put('sortDir','toggle');
+    
+            MassApprovalPageController approvalClass = new MassApprovalPageController();
+            List<MassApprovalPageController.wrapProject> wrapList = approvalClass.getWrapRecords();
+            
+            approvalClass.OnChangeMethod();
+            approvalClass.sortBasedOnColumn();
+            approvalClass.Beginning();
+            approvalClass.Previous();
+            approvalClass.Next();
+            approvalClass.End();
+            approvalClass.getDisablePrevious();
+            approvalClass.getDisableNext();
+            approvalClass.getTotal_size();
+            approvalClass.getPageNumber();
+            approvalClass.getTotalPages();
+             If (wrapList.size() > 0) {
+                wrapList[0].selectedApprove = true;
+                wrapList[0].selectedReject = true; }
+            approvalClass.save();
+            ApexPages.Message[] pageMessages = ApexPages.getMessages();
+            //System.assertNotEquals(0, pageMessages.size());
+            approvalClass.cancel();
+            
+        test.stoptest();  
+    } 
+}

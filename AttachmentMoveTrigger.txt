@@ -1,0 +1,79 @@
+
+trigger LeadToProjectAttachmentMove on Lead (after update) 
+{
+    // list of attachments and notes to be reassigned
+    Attachment[] insertAttList = new Attachment[]{};
+    Note[] insertNoteList = new Note[]{}; 
+    
+    // list of lead IDs and their corresponding project lookups
+    Map<Id, ID> projectIDLookUp = new map<ID, ID>();
+    List<Id> leadIDs = new List<ID>();
+    
+    for(Lead updatedLead : Trigger.new)
+    {
+        if(updatedLead.project__c != null)
+        {
+            //if project field is not null verify if it was null before
+            Lead oldLead = Trigger.oldMap.get(updatedLead.ID);
+            if(oldLead.project__c == null)
+            {        
+                // note down the lead ID for bulk processing
+                leadIDs.add(updatedLead.ID);
+                
+                // add the project ID 'value' for lead ID 'key' in the projectLookUp map
+                projectIDLookUp.put(updatedLead.ID, updatedLead.Project__c);
+            }
+        }
+    }
+    
+    // get all the attachments from the leads contained by leadIDs
+    Attachment[] attachmentsList = [select id, name, body, parentID from Attachment where parentID in :leadIds];
+    
+    // verify that the there are attachments to be moved
+    if(attachmentsList.size() > 0) 
+    {
+        for(Attachment at : attachmentsList)
+        {
+            // get the project ID to which the attachment needs to be moved   
+            ID leadId = at.parentID;
+            
+            // leadID is the 'key' to get the project ID from the projectIDLookup we created
+            ID pID = projectIDLookUp.get(leadId); 
+            
+            // clone each attachment and add it to the insert list
+            Attachment attClone = new Attachment(name = at.name, body = at.body, parentid = pID);
+            
+            // add the newly cloned attachment to the attachments list. The list will be inserted to the database
+            // at the end of this trigger
+            insertAttList.add(attClone);
+        }
+        // delete the attachments from the lead object in the database. Since we already cloned these attachments and
+        // will be inserting it later, it is file to delete them now.
+        delete attachmentsList;
+  }
+                
+    // get all the notes from the lead
+    Note[] notesList = [select id, title, body, parentID from Note where parentID in :leadIDs];  
+    if(notesList.size()>0)
+    {
+        for(Note n : notesList)
+        {
+            // clone each note and add it to the insert list
+            ID leadId = n.parentID;
+            ID pID = projectIDLookUp.get(leadId);
+            Note noteClone = new Note(title = n.title, body = n.body, parentid = pID);
+            insertNoteList.add(noteClone);
+        }
+        delete notesList;
+  }
+                
+    if(insertAttList.size() > 0)
+    {
+        insert insertAttList;
+    }
+    
+    if(insertNoteList.size() > 0)
+    {
+        insert insertNoteList;
+    }  
+}

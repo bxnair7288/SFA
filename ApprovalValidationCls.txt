@@ -1,0 +1,132 @@
+public class ApprovalValidationCls{
+
+   //---------------------------------------------------------------------------------------------
+   //-- bxne - 07102014. Class to validate Approval process criteria. Called from
+   //   trigger ApprovalValidationTrg. Test calss is ApprovalValidationTest. 
+   //   
+   //   This class gets called from the trigger that is triggered via the field set
+   //   update of submitted_for_approval__c flag. This flag is only set during the 
+   //   Payment approval process and not the Project agreement stage. This class
+   //   will also get executed when user clicks the Submit for approval button when 
+   //   the project is in Project development stage.
+   //   All below vaildations except the 1st one are done at the time of payment approval process.
+   //   User submits for project agreement approval when the project is in Pre-Install Review.
+   //   User submits for payment approval when the project status is in Post-Install Review.
+   //
+   //   Change history:
+   //          9/3/14   -   Deployed in production
+   //          9/8/14   -   Case# 2514 - Remove IM required validation for 3P - Custom.
+   //        11/19/14   -   Put original logic back after Oksana's deployment
+   //        01/27/15   - //PVU1 Added don't fire for Deemed Program
+   //----------------------------------------------------------------------------------------------
+   public static void approval_validation_method(List<eo3__Ecology_Project__c> Projects){
+    
+   String errorMsg = '';
+   integer i = 0;
+        
+   for(eo3__Ecology_Project__c p : Projects){
+   
+   //PVU1 Added don't fire for Deemed Program
+   If (p.eo3__Project_Type__c != 'Deemed') {
+     
+     if (p.submitted_for_approval__c == true){
+     
+        IF (p.eo3__Project_Status__c == 'Project Development'){
+                system.debug ('in 1st check');
+  
+          i++;
+          errorMsg = '\n' + i + '.' + ' The Project can only be submitted for Project Agreement when the Project Status is Pre-Install Review';
+          p.addError (errorMsg);
+          return;
+        }        
+       
+        // Validation 1: The Project can be submitted for Payment approval when the Project Status is Post-Install Review.
+        IF (p.eo3__Project_Status__c != 'Post-Install Review'){
+          system.debug ('in proj status....2');
+          i++;
+          errorMsg = '\n' + i + '.' + ' The Project can be submitted for Payment approval when the Project Status is Post-Install Review'; 
+        }   
+        // Validation 2: Please select a Program Manager
+        IF (p.Program_Manager__c == null){
+          
+          system.debug ('in program manager check');
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Program Manager is not selected'; 
+        }
+ 
+       // Validation 3: If Application is not signed then throw below error
+        RecordType projRecordTypeCustom = [select id, name, SobjectType from recordtype where (SobjectType = 'eo3__Ecology_Project__c' and name like 'Custom - 3rd Party')];
+        IF (p.RecordTypeID == projRecordTypeCustom.ID && p.Appliaction_Signed__c == False){
+//        IF (p.RecordType.Name == 'Custom - 3rd Party' && p.Appliaction_Signed__c == False){
+                system.debug ('in program ');
+  
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Application Signed must be checked before Approved for Payment can be completed '; 
+        }
+
+       // Validation 4 : When the "Revision Required on Post-Install Review" is checked then Project cannot be submitted for Approval.
+        IF (p.Revision_Required_on_Post_Install_Review__c  == True){
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Revision Required on Post-Install Review '; 
+        }
+
+       // Validation 5 : For Custom - 3rd Party - The Project cannot be submitted for Approval until the Project Approved for Final Review has been checked
+//        IF (p.RecordType.Name == 'Custom - 3rd Party' && p.Project_Approved_for_Final_Review__c == false){
+        IF (p.RecordTypeID == projRecordTypeCustom.ID && p.Project_Approved_for_Final_Review__c == false){
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Project Approved for Final Review is not checked '; 
+        }       
+
+       // Validation 6 : Since the Review Type is Tech Review, the Project cannot be submitted for Approval until the Post-Installation Inspection has been complete.
+        RecordType projRecordTypeDI = [select id, name, SobjectType from recordtype where (SobjectType = 'eo3__Ecology_Project__c' and name like 'Direct Install - 3rd Party / GP')];
+        IF (p.RecordTypeID ==  projRecordTypeDI.ID && p.Review_Type__c == 'Tech Review' && p.Post_Installation_Approved__c ==null){
+//      IF (p.RecordType.Name == 'Direct Install - 3rd Party / GP' && p.Review_Type__c == 'Tech Review' && p.Post_Installation_Approved__c ==null){
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Review Type is Tech Review and Post Installation is not approved '; 
+        }       
+
+         // Validation 7 : Please select the Implementation manager
+//      IF ((p.RecordType.Name == 'Direct Install - 3rd Party / GP' || p.RecordType.Name == 'Custom - 3rd Party') && p.Program_Manager__c == null){
+//      As per igor removed DI as there is no IM for DI 8/14/2014
+//      IF ((p.RecordTypeID ==  projRecordTypeDI.ID || p.RecordTypeID == projRecordTypeCustom.ID) && p.Implementation_Manager__c == null){
+//      9/8/14 - As per case 2514 this validation is not needed for 3P - Custom. It is only for Custom PG&E Sales
+        IF (! (p.RecordTypeID == projRecordTypeCustom.ID || p.RecordTypeID ==  projRecordTypeDI.ID ) && p.Implementation_Manager__c == null){
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Implementation manager is not selected '; 
+        }       
+
+        // Validation 8 : Please select the Implementer
+        // IF (p.RecordType.Name == 'Custom - 3rd Party' && p.Implementer__c == null){
+        IF (p.RecordTypeID  == projRecordTypeCustom.ID && p.Implementer__c == null){
+
+        i++;
+         errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Implementer is not selected '; 
+        }       
+
+        // Validation 9 : Please select the Implementer
+      IF (p.RecordTypeID == projRecordTypeDI.ID && p.Customer_Agreement_Signed__c == TRUE && p.CP_Name__c == null && p.Site_Access_Agreement_Signed__c == TRUE && p.Implementer__c == null){
+//      IF (p.RecordType.Name == 'Direct Install - 3rd Party / GP' && p.Customer_Agreement_Signed__c == TRUE && p.CP_Name__c == null && p.Site_Access_Agreement_Signed__c == TRUE && p.Implementer__c == null){
+        i++;
+         errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Implementer is not selected ';        
+        }
+
+        // Validation 10: Please select & Implementer
+//      IF ((p.RecordType.Name == 'Direct Install - 3rd Party / GP' || p.RecordType.Name == 'Custom - 3rd Party') && p.Program_Manager__c == null){
+        IF ((p.RecordTypeID ==  projRecordTypeDI.ID || p.RecordTypeID == projRecordTypeCustom.ID) && p.Program_Manager__c == null){
+          i++;
+          errorMsg = errorMsg + '\n' + i + '.' + ' Project cannot be submitted for Approval when Implementer is not selected ';         
+        }
+
+        if (errorMsg != '') {
+          system.debug ('in p add err');
+          p.addError (errorMsg);
+        }
+  
+     }
+     
+     }  
+    }
+       
+   }
+
+}

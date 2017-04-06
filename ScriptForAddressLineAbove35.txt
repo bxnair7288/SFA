@@ -1,0 +1,10 @@
+List<EI_EV_Application__c> lstEvApp = [SELECT Application_Number_EI__c,F_Mailing_Street_Ln_2_EI__c,F_Mailing_Street_Ln_1_EI__c,  Id FROM EI_EV_Application__c where F_Mailing_Street_Ln_2_EI__c != null and F_Mailing_Street_Ln_2_EI__c != '' and F_Mailing_Street_Ln_2_EI__c != 'NA'];
+system.debug('Total apps: ' + lstEvApp.size());
+string str;
+integer len;
+for (EI_EV_Application__c app : lstEvApp) {
+str = app.F_Mailing_Street_Ln_1_EI__c + ' ' + app.F_Mailing_Street_Ln_2_EI__c;
+len = str.length();
+ if (len > 35) 
+ system.debug ('EV App - Address line 1&2: ' + app.Application_Number_EI__c + ' - ' + str + ' / ' + str.length());
+}

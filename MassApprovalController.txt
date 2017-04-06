@@ -1,0 +1,317 @@
+/**************************************************************************************************   
+Apex Controller Name :  MassApprovalPageController
+Version              :  1.0                                                                          
+Created Date         :  Nov 10, 2015                                                               
+Function             :  Controller class for Mass Approval Page
+Story                :                                                                               
+Work Task            :                                                                               
+Modification Log     :                                                                               
+*--------------------------------------------------------------------------------------------------  
+* Developer                   Date                   Description                                     
+* -------------------------------------------------------------------------------------------------  
+* Naveen K Udatha              6/22/2015              First Iteration     
+* Oksana Master                9/2/2016               case 9769, commented doubel dip due to soql 50001                                               
+***************************************************************************************************/
+public class MassApprovalPageController {
+       public List<wrapProject> lstWrapProject{get;set;}
+    public List<SelectOption> lstProject{get;set;}
+    public string selectProject{get;set;}
+    public string sortDirection{get;set;}
+    public Map<Id,string> mapsubcontractor{get;set;}
+    public Integer total_size{set;get;}
+    public Map<id, List<eo3__custom_tasks__c>> projectPMMap {get;set;}
+    private Map<Id, Integer> mapDoubleDip;
+    private List<eo3__Ecology_Project__c> lstEcology;
+    private Integer counter=0;  
+    private Integer list_size=25; 
+    private Set<Id> recordTypeIdSet;
+    private Set<String> recordTypes = new Set<String>{'Deemed - PG&E Sales', 'Deemed - PG&E Sales - Read Only'};
+    private static final String PROJECT_STATUS_REJECTED = 'Rejected';
+    private List<Id> projId;
+    
+    public MassApprovalPageController(){
+        
+        lstProject = new list<selectoption>();
+        lstProject.add(new selectoption('none','--None--'));
+        
+        recordTypeIdSet = new Set<Id>();
+        
+        for(String s :recordTypes) {
+            if(Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().containsKey(s)) {
+                Id recId = Schema.SObjectType.eo3__Ecology_Project__c.getRecordTypeInfosByName().get(s).getRecordTypeId();
+                recordTypeIdSet.add(recId);
+            }
+        }
+
+        String query = 'SELECT Id, eo3__Project_Type__c, eo3__Program__c, Mid_Upstream_Project__c, Approved_For_Payment__c, eo3__Program__r.name, eo3__Project_Status__c, CIP_Status__c, Deemed_Rejection_Reason__c FROM eo3__Ecology_Project__c '; 
+        String whereClause = 'where recordtypeId IN : recordTypeIdSet AND Mid_Upstream_Project__c = true AND Approved_For_Payment__c = false AND ( (eo3__Project_Status__c=\'CIP\' AND CIP_Status__c=\'Auto Waived\') OR (eo3__Project_Status__c=\'Post-Install Review\' AND (CIP_Status__c=\'Passed\' OR CIP_Status__c=\'Waived\'))) '; 
+        
+        List<eo3__Ecology_Project__c> projList = (List<eo3__Ecology_Project__c>) Database.query(query+whereClause);
+        
+        Set<ID> programIdSet = new Set<ID>();
+
+        for(eo3__Ecology_Project__c proj :projList) {
+            if(!programIdSet.contains(proj.eo3__Program__c)) {
+                lstProject.add(new selectoption(proj.eo3__Program__c,proj.eo3__Program__r.name));
+            }
+            programIdSet.add(proj.eo3__Program__c);
+        }
+    }
+    
+    public void OnChangeMethod() {
+        counter = 0;
+    }
+    
+    public void sortBasedOnColumn() {
+        String sortDir = ApexPages.currentPage().getParameters().get('sortDir');
+        if(sortDir == 'toggle'){
+            if(sortDirection == 'asc') {
+                sortDirection = 'desc';
+            }
+            else {
+                sortDirection = 'asc';
+            }
+        } 
+    }
+    
+    public void save() {
+    
+      List<eo3__Ecology_Project__c> lstUpdateProject = new list<eo3__Ecology_Project__c>(); 
+        String errorMsg;
+    
+    // Case 7184 -- START
+    // Checking for Validations
+        for(wrapProject wrapRecord : lstWrapProject) {
+          
+          if(wrapRecord.selectedApprove && wrapRecord.selectedReject) {
+            errorMsg = '<a target="_blank" href="/'+wrapRecord.ecoProject.id+'">'+ wrapRecord.ecoProject.name + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><br/>';
+                errorMsg += Label.Cannot_Approve_Reject_Same_Project;
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error, errorMsg));
+          }
+          else if(wrapRecord.selectedReject && wrapRecord.ecoProject.eo3__Project_Type__c != 'Deemed' && (wrapRecord.ecoProject.Deemed_Rejection_Reason__c == Null || wrapRecord.ecoProject.Deemed_Rejection_Reason__c == '')) {
+            errorMsg = '<a target="_blank" href="/'+wrapRecord.ecoProject.id+'">'+ wrapRecord.ecoProject.name + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><br/>';
+                errorMsg += Label.Rejection_Reason_required_if_Project_rejected;
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error, errorMsg));
+          }
+        }
+        // Case 7184 -- END
+        
+        // After all validations are completed, process Project records which are Approved or Rejected
+        for(wrapProject wrapRecord : lstWrapProject) {
+            
+          // When Project record is approved
+            if(wrapRecord.selectedApprove && !wrapRecord.selectedReject) {
+                wrapRecord.ecoProject.Approved_For_Payment__c = true; 
+                // Case 7184 -- START
+                // If project Approved, Rejection Reason is made blank.
+                wrapRecord.ecoProject.Deemed_Rejection_Reason__c = Null;
+                // Case 7184 -- END
+                if(wrapRecord.ecoProject.CIP_Status__c == 'Waived') {
+                    wrapRecord.ecoProject.eo3__Project_Status__c = 'Approved for Payment';
+                }
+            }
+            
+            // Case 7184 -- START
+            // When Project record is rejected
+            else if(wrapRecord.selectedReject && !wrapRecord.selectedApprove) {
+              // Reject Project condition added due to validation rule on Project: Reject_Project_Req_for_Rejection_Reason
+              wrapRecord.ecoProject.Reject_Project__c = true;
+              wrapRecord.ecoProject.eo3__Project_Status__c = PROJECT_STATUS_REJECTED;
+            }
+            
+            lstUpdateProject.add(wrapRecord.ecoProject);
+            // Case 7184 -- END
+        }
+        
+        if(!lstUpdateProject.isEmpty()) {
+          
+            List<Database.SaveResult> updateResults = Database.update(lstUpdateProject, false);
+            
+            string failedId = '';
+            for(Integer i=0;i<updateResults.size();i++){
+                if (updateResults.get(i).isSuccess()){
+                    updateResults.get(i).getId();
+                }
+                else if (!updateResults.get(i).isSuccess()) {
+                    Database.Error error = updateResults.get(i).getErrors().get(0);
+                    String failedDML = error.getMessage();
+                    failedId = '<a target="_blank" href="/'+lstUpdateProject.get(i).id+'">'+ lstUpdateProject.get(i).name + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><br/>';
+                    failedId = failedId + error.getMessage();
+                    ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error, failedId));
+                }
+                else {
+                    continue;
+                }
+            }
+        } 
+    }
+    
+    
+    public void populateValues() {
+       
+        mapDoubleDip = new map<Id,Integer>();
+        mapsubcontractor = new map<Id,string>();
+        projId = new List<Id>();
+        projectPMMap = new Map<id, List<eo3__custom_tasks__c>>();
+        
+        if(sortDirection == null) {
+            sortDirection = 'asc';
+        }
+        
+        String query ='SELECT Id, eo3__Project_Type__c, eo3__Description__c, E_IM_Reviewer__c, Project_Cap_Adjustment__c, eo3__Program__r.name, eo3__Program__r.Market_Channel__c, Financing_Application__r.name, Performance_Payment__c, eo3__Total_Incentive_Amount__c, Data_Entry_Complete_Date__c, SAID__c, Total_Uncapped_Incentive_Amount_Curr__c, EE_Project_Cost__c, eo3__Site_new__r.name, Name, E_IM_Review__c, Action_Currently_Required_from__c, recordtypeId, eo3__Program__c, eo3__Project_ID__c, Total_Therms_Savings__c, Total_kWh_Savings__c, Total_kW_Savings__c, Financing_Application__c, Deemed_Rejection_Reason__c from eo3__Ecology_Project__c ';
+        String whereClause = 'where recordtypeId IN : recordTypeIdSet AND Mid_Upstream_Project__c = true AND Approved_For_Payment__c = false AND ( (eo3__Project_Status__c=\'CIP\' AND CIP_Status__c=\'Auto Waived\') OR (eo3__Project_Status__c=\'Post-Install Review\' AND (CIP_Status__c=\'Passed\' OR CIP_Status__c=\'Waived\'))) '; 
+
+        if(selectProject != null && selectProject !='' && selectProject != 'none') {
+            whereClause = whereClause + 'AND eo3__Program__c =: selectProject ';
+        }
+        
+        String countSOQL = 'select count() from eo3__Ecology_Project__c '+ whereClause;
+        total_size = Database.countQuery(countSOQL);
+
+        String finalQuery = query+whereClause;
+        lstEcology = (List<eo3__Ecology_Project__c>)database.query(finalQuery+' order by eo3__Program__r.name '+sortDirection+' Limit '+list_size+' Offset '+counter);
+        
+        for(eo3__Ecology_Project__c ecoProj : lstEcology) {
+ //oxm5        mapDoubleDip.put(ecoProj.Id,0);
+          projId.add(ecoProj.Id);
+        }
+    
+    
+        if(!projId.isEmpty()){
+          // TO PUT BACK PROJECT MEASURE CHANGES IN CODE UNCOMMENT BELOW PART AND IN VF --START
+            /*for(eo3__custom_tasks__c customTask : [select Id, eo3__Project__c, eo3__Utility_Measure_Code__c, eo3__Technology_Type__c, Measure_Area__c, eo3__Rebate__c, End_Use_Category__c, eo3__Total_Quantity__c, eo3__Measure__c, kW_Savings__c, kWh_Savings__c, Therms_Savings__c from eo3__Custom_Tasks__c where eo3__Project__c IN: projId]) {
+                mapsubcontractor.put(customTask.Id,'');
+                
+                if(!projectPMMap.containsKey(customTask.eo3__Project__c)){
+          List<eo3__custom_tasks__c> temp = new List<eo3__custom_tasks__c>();
+          temp.add(customTask);
+          projectPMMap.put(customTask.eo3__Project__c, temp);
+          }
+          else{
+          List<eo3__custom_tasks__c> temp = projectPMMap.get(customTask.eo3__Project__c);
+          temp.add(customTask);
+          projectPMMap.put(customTask.eo3__Project__c, temp);
+          }
+            }
+            
+            
+            if(!mapsubcontractor.isEmpty()){
+                List<eo3__Subcontractor_Reported_Measures__c>lstSubContractor = [SELECT Id,eo3__Task__c,eo3__Area__r.name from eo3__Subcontractor_Reported_Measures__c where eo3__Task__c IN : mapsubcontractor.keySet()];
+                if(!lstSubContractor.isEmpty()){
+                    for(eo3__Subcontractor_Reported_Measures__c subContractor : lstSubContractor){
+                        if(mapsubcontractor.containsKey(subContractor.eo3__Task__c) && subContractor.eo3__Area__r.name != null && subContractor.eo3__Area__r.name !=''){
+                            mapsubcontractor.put(subContractor.eo3__Task__c,subContractor.eo3__Area__r.name);
+                        }
+                    }
+                }
+            } */
+            // TO PUT BACK PROJECT MEASURE CHANGES IN CODE UNCOMMENT BELOW PART AND IN VF --END
+    
+ //oxm5           List<Double_Dip_Results__c> lstDoubleDip = [SELECT Id, Current_Project_Id__c from Double_Dip_Results__c where Current_Project_Id__c IN : mapDoubleDip.keySet()];
+            
+ //oxm5           if(!lstDoubleDip.isEmpty()){
+ //oxm5               for(Double_Dip_Results__c doubleDip : lstDoubleDip){
+ //oxm5                   if(!mapDoubleDip.isEmpty()){
+ //oxm5                       if(mapDoubleDip.containsKey(doubleDip.Current_Project_Id__c)){
+ //oxm5                           integer relatedRecord = mapDoubleDip.get(doubleDip.Current_Project_Id__c);
+  //oxm5                          mapDoubleDip.put(doubleDip.Current_Project_Id__c, relatedRecord+1);
+  //oxm5                      }
+  //oxm5                  }
+   //oxm5             }
+   //oxm5         }
+        }
+    }
+     
+    //Method called to create wrapper list
+    public List<wrapProject> getWrapRecords() {
+    
+        populateValues();
+        
+        lstWrapProject = new List<wrapProject>();
+        Integer i = 1;
+        for(eo3__Ecology_Project__c projRecord : lstEcology) {
+  //oxm5          if(mapDoubleDip.containsKey(projRecord.Id)){
+ //oxm5               lstWrapProject.add(new wrapProject(projRecord, mapDoubleDip.get(projRecord.Id), i));
+  //oxm5              i++;
+   //oxm5         }
+          lstWrapProject.add(new wrapProject(projRecord, 0, i));
+
+        }
+        
+        return lstWrapProject;
+    }
+    
+    //Wrapper Class
+    public class wrapProject{
+        public eo3__Ecology_Project__c ecoProject{get; set;}
+        public Boolean selectedApprove {get; set;}
+        public Boolean selectedReject {get; set;}
+        public integer doubleDipCount{get;set;}
+        public Integer serialNo{get;set;}
+
+        public wrapProject (eo3__Ecology_Project__c proj, integer count, integer srNo) {
+            ecoProject = proj;
+            selectedApprove = false;
+            selectedReject = false;
+ //oxm5           doubleDipCount = count;
+            serialNo = srNo;
+        }
+    }
+    
+    //Cancel button to refresh the same page
+    public pagereference cancel(){
+        pagereference pg = new pagereference('/apex/MassApprovalPage');
+        pg.setredirect(true);
+        return pg;
+    }
+    
+    public void Beginning() {
+        counter = 0;
+    }
+    
+    public void Previous() { 
+        counter -= list_size;
+    }
+    
+    public void Next() { 
+        counter += list_size;
+    }
+    
+    public void End() { 
+        counter = total_size - math.mod(total_size, list_size);
+    }
+    
+    public Boolean getDisablePrevious() { 
+        if (counter>0) {
+            return false; 
+        }
+        else {
+            return true;
+        }
+    }
+    
+    public Boolean getDisableNext() { 
+        if(counter + list_size < total_size) { 
+            return false;
+        } 
+        else {
+            return true;
+        }
+    }
+    
+    public Integer getTotal_size() {
+        return total_size;
+    }
+    
+    public Integer getPageNumber() {
+        return counter/list_size + 1;
+    }
+    
+    public Integer getTotalPages() {
+        if (math.mod(total_size, list_size) > 0) {
+            return total_size/list_size + 1;
+        } else {
+            return (total_size/list_size);
+        }
+    }
+}

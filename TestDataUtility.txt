@@ -1,0 +1,69 @@
+public class TestDataUtility {
+//TODO bxne - as time permits create methods to insert program, portfolio, climate and vintage etc
+// that is needed for successful project creation in this utility class.
+ 
+     public static User initUser(String profilename,String alias, Id contId, String roleName){
+        //Create a User Record in Test Class
+        Profile p = [SELECT Id FROM Profile WHERE Name=:profilename ];
+        String orgId = UserInfo.getOrganizationId();
+        String dateString = String.valueof(Datetime.now()).replace(' ','').replace(':','').replace('-','');
+        Integer randomInt = Integer.valueOf(math.rint(math.random()*1000000));
+        String uniqueName = orgId + dateString + randomInt;
+        
+    User u = new User(  LastName='Testing'+profilename,
+                            email = uniqueName + '@test' + orgId + '.org',
+                            Username = uniqueName + '@test' + orgId + '.org',
+                            EmailEncodingKey = 'ISO-8859-1',
+                            Alias = uniqueName.substring(18, 23),
+                            TimeZoneSidKey = 'America/Los_Angeles',
+                            LocaleSidKey = 'en_US',
+                            LanguageLocaleKey = 'en_US',
+                            ProfileId = p.Id,
+                            IsActive = true,
+                            Lead_Project_Team_Title__c = profilename,
+                            Is_user_a_rep__c = 'N',
+                            Lan_ID__c=profilename, FirstName='abc', 
+                            Job_Title__c='xxx',
+                            Street='aa',
+                            City='san jose', 
+                            state='CA',
+                            country='US',
+                            Postalcode='11111',
+                            Department='aaa',
+                            division='aaa', 
+                            Company_Mailing_Name__c='aaaa',
+                             Rep_Is_Active__c='True',
+                             MobilePhone='111-111-1111',
+                             Phone='222-222-2222',
+                             fax = '111-111-1111'
+                            );                    
+        if(contId <> null)
+            u.ContactId = contId;
+        
+        if(roleName<> null)
+        {      
+            List<UserRole> rl = [Select id, name from UserRole where Name=:roleName limit 1 ];
+            if(!rl.isEmpty()){
+                u.UserRoleId = rl[0].Id;
+            }   
+        }
+        return u;
+    }
+    // 11/26/2014 - Added test record creation for site, project and project measures.
+        //method to create test eoSite record
+    public static eo3__eoSite__c createEoSite(){
+        eo3__eoSite__c eoSite = new eo3__eoSite__c(eo3__Business_Type__c ='',eo3__Vintage__c = '');
+        return eoSite;
+    }
+    // method to create project
+    public static eo3__Ecology_Project__c createProject(Id eoSiteId){
+        eo3__Ecology_Project__c ecologyProject = new eo3__Ecology_Project__c(eo3__Site_new__c =eoSiteId);
+        return ecologyProject;
+    }     
+     
+     //method to create test eoSite record
+    public static eo3__Custom_Tasks__c createCustomTasks(Id projectId){
+        eo3__Custom_Tasks__c customTasks = new eo3__Custom_Tasks__c(eo3__Project__c = projectId);
+        return customTasks;
+    }
+}

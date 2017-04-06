@@ -1,0 +1,33 @@
+{!REQUIRESCRIPT("/soap/ajax/30.0/connection.js")}
+{!REQUIRESCRIPT("/soap/ajax/30.0/apex.js")}
+
+var projectId = '{!eo3__Ecology_Project__c.Id}';
+var AuditDate='{!eo3__Ecology_Project__c.eo3__Audit_Date__c}' ; 
+var MeasuresValid='{!eo3__Ecology_Project__c.Count_of_Invalid_Audit_Measures__c}' ; 
+var AuditContactValid='{!eo3__Ecology_Project__c.Primary_Project_Contact_Requirement_Met__c}'; 
+var strURL = "/flow/SubmitAudit?varAuditID=" + '{!eo3__Ecology_Project__c.Id}' + "&retURL=" + '{!eo3__Ecology_Project__c.Id}'; 
+
+if(AuditDate == "") 
+{ 
+alert("Audit Date must be complete in order to Submit Audit"); 
+} 
+else if (AuditContactValid == "No") 
+{ 
+alert("Primary Project Contact Requirement must be met in order to Submit Audit"); 
+} 
+else if (MeasuresValid != 0) 
+{ 
+alert("All measures must be valid in order to Submit Audit - Please check the building type/vintages etc"); 
+} 
+else 
+{ 
+	var response =  sforce.apex.execute("CheckEndUse","checkNumberofEndUse",{projectId:projectId});
+	
+	if(response == 'Success.'){
+		window.location.href=strURL; 
+	}
+	else{
+           alert(response);
+	window.location.reload();
+	}	
+}

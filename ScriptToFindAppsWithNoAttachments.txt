@@ -1,0 +1,22 @@
+List<EI_EV_Application__c> lstProjects = [select id, createddate, Application_Number_EI__c, (select id from Attachments) from EI_EV_Application__c where Application_Status_EI__c = 'In Progress' OR Application_Status_EI__c = 'New'];
+system.debug('App count : ' + lstProjects.size());
+
+Integer countOppLine = 0;
+
+Integer appcount = 0;
+
+for(EI_EV_Application__c c: lstProjects ) {
+    appcount = appcount + 1;
+    Integer attcount = 0;
+    for (Attachment att : c.Attachments) {
+         attcount = attcount + 1;
+    }
+    if (attcount > 0) {
+       countOppLine = countOppLine  + 1;
+    } else {
+       system.debug('EV App number / Date : ' + c.Application_Number_EI__c + ' / ' + c.createddate);
+    }
+}
+
+system.debug('EV App count : ' + appcount );
+system.debug('Attachment count : ' + countOppLine);

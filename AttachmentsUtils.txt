@@ -1,0 +1,127 @@
+public class AttachmentUtils
+{
+    public static void updateProjectsImageURLs()
+    {
+        String strBaseURL = URL.getSalesforceBaseUrl().toExternalForm() + '/servlet/servlet.FileDownload?file=';
+
+        List<Id> lstProjectIds = new List<Id>();
+
+        List<eo3__Ecology_Project__c> lstProjects = Trigger.New;
+        Map<Id, SObject> mapOldProjects = Trigger.oldMap;
+        for(eo3__Ecology_Project__c objProject : lstProjects)
+        {
+            if(objProject.Update_Image_URLs__c == true && 
+              (Boolean)mapOldProjects.get(objProject.Id).get('Update_Image_URLs__c') == false)
+            {
+                lstProjectIds.add(objProject.Id);
+            }
+        }
+        
+        System.debug('PERFORMING FIELD UPDATE FOR ' + lstProjectIds.size() + ' project(s)');
+        
+        List<Attachment> lstAttachments = lstProjectIds.size() > 0 ? 
+          [SELECT Id, Name, ParentId, ContentType FROM Attachment WHERE ParentId IN :lstProjectIds ORDER BY CreatedDate] : 
+          new List<Attachment>();
+
+        for(eo3__Ecology_Project__c tempProject : lstProjects)
+        {
+            if(tempProject.Update_Image_URLs__c == true)
+            {
+                tempProject.Image_1_URL__c = '';
+                tempProject.Image_2_URL__c = '';
+                tempProject.Image_3_URL__c = '';
+                tempProject.Image_4_URL__c = '';
+                tempProject.Image_5_URL__c = '';
+
+                Integer counter = 1;
+                for(Attachment objAttachment : lstAttachments)
+                {
+                    String strParentId = objAttachment.ParentId;
+                    if((objAttachment.Name.contains('Facility_Photo_') ||
+                      objAttachment.ContentType != null && objAttachment.ContentType.containsIgnoreCase('image')) &&
+                      !objAttachment.Name.contains('Measure_Photo_'))
+                    {
+                        if(tempProject.Id == strParentId && counter <= 5)
+                        {
+                            tempProject.put('Image_' + counter + '_URL__c', strBaseURL + objAttachment.Id);
+                            counter++;
+                        }
+                    }
+                }
+
+                tempProject.Update_Image_URLs__c = false;
+            }
+        }
+    }
+
+    public static void updateProjectMeasuresImageURLs()
+    {
+        String strProjectMeasurePrefix = eo3__Custom_Tasks__c.sObjectType.getDescribe().getKeyPrefix();
+        String strBaseURL = URL.getSalesforceBaseUrl().toExternalForm() + '/servlet/servlet.FileDownload?file=';
+
+        Map<Id, eo3__Custom_Tasks__c> mapProjectMeasuresToUpdate = new Map<Id, eo3__Custom_Tasks__c>();
+
+        List<Id> lstProjectMeasureIds = new List<Id>();
+
+        List<Attachment> lstAttachments = Trigger.New;
+        for(Attachment objAttachment : lstAttachments)
+        {
+            String strParentId = objAttachment.ParentId;
+            if(strParentId.substring(0,3).equalsIgnoreCase(strProjectMeasurePrefix))
+            {
+                lstProjectMeasureIds.add(strParentId);
+            }
+        }
+        Map<Id, eo3__Custom_Tasks__c> mapProjectMeasures = new Map<Id, eo3__Custom_Tasks__c>(
+          [SELECT Id, Image_1_URL__c, Image_2_URL__c, Image_3_URL__c,
+          Image_4_URL__c, Image_5_URL__c FROM eo3__Custom_Tasks__c WHERE Id IN :lstProjectMeasureIds]);
+
+        for(Attachment objAttachment : lstAttachments)
+        {
+            String strParentId = objAttachment.ParentId;
+            if(strParentId.substring(0,3).equalsIgnoreCase(strProjectMeasurePrefix) &&
+              (objAttachment.Name.contains('Measure_Photo_') ||
+              objAttachment.ContentType != null && objAttachment.ContentType.containsIgnoreCase('image')) &&
+              !objAttachment.Name.contains('Facility_Photo_'))
+            {
+                eo3__Custom_Tasks__c tempProjectMeasure =
+                  mapProjectMeasuresToUpdate.containsKey(strParentId) ?
+                  mapProjectMeasuresToUpdate.get(strParentId) :
+                  new eo3__Custom_Tasks__c(Id = objAttachment.ParentId, 
+                  Image_1_URL__c = mapProjectMeasures.get(strParentId).Image_1_URL__c,
+                  Image_2_URL__c = mapProjectMeasures.get(strParentId).Image_2_URL__c, 
+                  Image_3_URL__c = mapProjectMeasures.get(strParentId).Image_3_URL__c, 
+                  Image_4_URL__c = mapProjectMeasures.get(strParentId).Image_4_URL__c, 
+                  Image_5_URL__c = mapProjectMeasures.get(strParentId).Image_5_URL__c);
+
+                if(String.isBlank(tempProjectMeasure.Image_1_URL__c))
+                {
+                    tempProjectMeasure.Image_1_URL__c = strBaseURL + objAttachment.Id;
+                }
+                else if(String.isBlank(tempProjectMeasure.Image_2_URL__c))
+                {
+                    tempProjectMeasure.Image_2_URL__c = strBaseURL + objAttachment.Id;
+                }
+                else if(String.isBlank(tempProjectMeasure.Image_3_URL__c))
+                {
+                    tempProjectMeasure.Image_3_URL__c = strBaseURL + objAttachment.Id;
+                }
+                else if(String.isBlank(tempProjectMeasure.Image_4_URL__c))
+                {
+                    tempProjectMeasure.Image_4_URL__c = strBaseURL + objAttachment.Id;
+                }
+                else if(String.isBlank(tempProjectMeasure.Image_5_URL__c))
+                {
+                    tempProjectMeasure.Image_5_URL__c = strBaseURL + objAttachment.Id;
+                }
+
+                mapProjectMeasuresToUpdate.put(strParentId, tempProjectMeasure);
+            }
+        }
+
+        if(mapProjectMeasuresToUpdate.values().size() > 0)
+        {
+            update mapProjectMeasuresToUpdate.values();
+        }
+    }
+}

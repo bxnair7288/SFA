@@ -1,0 +1,43 @@
+{!REQUIRESCRIPT("/soap/ajax/25.0/connection.js")} 
+{!REQUIRESCRIPT("/soap/ajax/10.0/apex.js")}
+
+var skip = false; 
+var projectObj = new sforce.SObject("eo3__Ecology_Project__c");
+//Id is used for update
+projectObj.Id = '{!eo3__Ecology_Project__c.Id}'; 
+// label and developername. label = UI, Name = developername
+var recTypeAudit = sforce.connection.query("SELECT name,Id from RecordType where developername = 'Audit'");
+var recTypeAuditReadonly = sforce.connection.query("SELECT name,Id from RecordType where developername = 'Audit_Read_Only'");
+
+//will return a list of records - syntax to retrieve records in js
+var records = recTypeAudit.getArray("records");
+
+var recordsReadonly = recTypeAuditReadonly.getArray("records");
+
+var auditRecord = records[0].Id.substring(0,15);
+var auditReadRecord = recordsReadonly[0].Id.substring(0,15);
+
+//alert(auditRecord);
+//alert(auditReadRecord);
+
+var projectStatus = '{!eo3__Ecology_Project__c.eo3__Project_Status__c}';
+alert(projectStatus);
+var projectRecTypeId = '{!eo3__Ecology_Project__c.RecordTypeId}';
+alert(projectRecTypeId);
+
+if(projectStatus == 'Submitted' && projectRecTypeId == auditReadRecord){
+
+alert ("here");
+projectObj.RecordTypeId = auditRecord;
+projectObj.eo3__Project_Status__c = 'In-Progress';
+projectObj.Project_Status_Date__c = new Date();
+var result = sforce.connection.update([projectObj]);
+if (result[0].success=='false') 
+{ 
+alert(result[0].errors.message); 
+skip = true; 
+} 
+if(!skip){ 
+location.reload(true);
+} 
+}
