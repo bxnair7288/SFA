@@ -1,0 +1,24 @@
+/**************************************************************************************************   
+Apex Trigger Name    :  AttachmentTrigger
+Version              :  1.0                                                                          
+Created Date         :  3/30/2017                                                         
+Function             :  Do not allow Attachments to be deleted by TradePro & SalesRep profiles, 
+                     :  for all Projects that are in Post Install stage.
+Case                 :  Investigate and Correct: TradePro and BES Ability to Delete an Uploaded Document
+Story                :  STY-00268                                                                             
+Work Task            :                                                                               
+Modification Log     :                                                                               
+*--------------------------------------------------------------------------------------------------  
+* Developer            Date                   Description                                     
+* -------------------------------------------------------------------------------------------------  
+* Balaram Nair        4/4/2017                Created new Trigger.
+***************************************************************************************************/
+trigger AttachmentTrigger on Attachment (before delete) {
+  if(trigger.isDelete && trigger.isBefore){
+     string returnMsg = '';
+     
+     returnMsg = AttachmentTriggerHelper.preventDeletion(trigger.old); 
+     if (returnMsg == null) { returnMsg = ''; }   
+     If (returnMsg <> '' ) {Trigger.old[0].addError( returnMsg ); }        
+  }
+}
