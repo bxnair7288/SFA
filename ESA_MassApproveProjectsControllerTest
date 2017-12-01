@@ -1,0 +1,270 @@
+/**************************************************************************************************   
+Apex Controller Name :  ESA_MassApproveProjectsControllerTest 
+Version              :  1.0                                                                          
+Created Date         :                                                               
+Function             :  Test Class for ESA_MassApproveProjects page
+Story                :                                                                               
+Work Task            :                                                                               
+Modification Log     :                                                                               
+*--------------------------------------------------------------------------------------------------  
+* Developer                   Date                   Description                                     
+* -------------------------------------------------------------------------------------------------  
+* Balaram                     11/29/2017             Intial Iteration                                             
+***************************************************************************************************/ 
+
+@isTest(SeeAllData = false)
+public class ESA_MassApproveProjectsControllerTest {
+    // Variables
+    private static EI_Portfolio__c m_portfolio;
+    private static EI_Portfolio__c m_portfoliomaster;
+    private static Account Acc;
+    private static EI_Order_Number__c ordernum;
+    private static EI_Program__c Prgm; 
+    private static Opportunity opp;
+    private static Product2 measure;
+    private static EI_EEGA__c eega;
+    private static final String EI_PARTNER = 'ESA Implementer';
+    private static User partUser;
+    private static User thisUser;
+    private static PriceBookEntry custPbe;
+    
+    /***************************************************************************************************     
+    * Method name  : setUpData
+    * Description  : settingup the data
+    * Parameter    : void
+ 	***************************************************************************************************/
+    public static void setUpData() {
+    
+        List<OpportunityLineItem> oppLineItemLst = new List<OpportunityLineItem>();
+        List<Opportunity> oppLst = new List<Opportunity>();
+        
+        Schema.DescribeSObjectResult accountSchemaResult = Schema.SObjectType.Account;
+        Map<String,Schema.RecordTypeInfo> mapAccountTypeInfo = accountSchemaResult.getRecordTypeInfosByName();
+        Id partnerRecordTypeId = mapAccountTypeInfo.get('Partner Account').getRecordTypeId();     
+
+        Schema.DescribeSObjectResult accountSchemaResult1 = Schema.SObjectType.Account;
+        Map<String,Schema.RecordTypeInfo> mapAccountTypeInfo1 = accountSchemaResult1.getRecordTypeInfosByName();
+        Id ESApartnerRecordTypeId = mapAccountTypeInfo1.get('ESA Implementer').getRecordTypeId();     
+     
+        // Creating Account
+        Acc = PM_EI_TestDataUtility.createAccount();
+        Acc.recordtypeId = partnerRecordTypeId;
+        insert Acc;
+
+        // Creating Account1
+        Account Acc1 = PM_EI_TestDataUtility.createAccount();
+        Acc1.recordtypeId = ESApartnerRecordTypeId;
+        insert Acc1;
+     
+        Contact partCon = PM_EI_TestDataUtility.createContact(Acc1);
+        partCon.LastName = 'Contact Last Name1';
+        insert partCon;
+     
+        partUser = PM_EI_TestDataUtility.createUser();
+        partUser.ProfileID = [Select Id From Profile Where Name = 'ESA Implementer'].id;
+        partUser.Username = 'test@test9845876.com12';
+        partUser.CommunityNickname = 'testUser1234';
+        partUser.ContactId = partCon.Id;
+        partUser.Approved_New_User_EI__c = true;
+        insert partUser;     
+      
+        // Create EEGA
+        eega = PM_EI_TestDataUtility.createEEGA('ABC001');
+        insert eega;
+        
+        // Create portfolios
+        Schema.DescribeSObjectResult pfSchemaResultportmaster = Schema.SObjectType.EI_Portfolio__c;
+        Map<String,Schema.RecordTypeInfo> mapPfTypeInfoportmaster = pfSchemaResultportmaster.getRecordTypeInfosByName();
+        String strPortfolioRecTypemaster = mapPfTypeInfoportmaster.get('Master Portfolio').getRecordTypeId();
+        m_portfoliomaster = new EI_Portfolio__c(Name='MyMasterPortfolio',RecordTypeId=strPortfolioRecTypemaster,Start_Date_EI__c=Date.Today(),End_Date_EI__c=Date.Today()+10);
+        m_portfoliomaster.EEGA_EI__c = eega.Id;
+        insert m_portfoliomaster;
+        
+        Schema.DescribeSObjectResult pfSchemaResultport = Schema.SObjectType.EI_Portfolio__c;
+        Map<String,Schema.RecordTypeInfo> mapPfTypeInfoport = pfSchemaResultport.getRecordTypeInfosByName();
+        String strPortfolioRecType = mapPfTypeInfoport.get('Portfolio').getRecordTypeId();
+        m_portfolio  = new EI_Portfolio__c (Name='MyPortfolio',RecordTypeId=strPortfolioRecType,Parnt_Porfl_EI__c=m_portfoliomaster.id,Market_Ch_EI__c='PG&E Sales');
+        m_portfolio.EEGA_EI__c = eega.Id;
+        insert m_portfolio;
+          
+        // Create Order Number
+        ordernum = PM_EI_TestDataUtility.createOrderNumber();
+        ordernum.EEGA_EI__c= eega.Id;
+        insert ordernum ;  
+        
+        // Create Program
+        //Prgm = PM_EI_TestDataUtility.createProgram(m_portfolio);
+        //prgm.Order_Number_EI__c=ordernum.id;
+        //insert Prgm ;
+
+        //create Program
+        EI_Program__c programRec = PM_EI_TestDataUtility.createProgram(m_portfolio);
+        programRec.Pgm_Classification_EI__c = 'Direct Install';
+        programRec.Pgm_Code_EI__c = 'ESA';
+        programRec.Pgm_Start_Date_EI__c = SYSTEM.TODAY() - 20;
+        programRec.Pgm_End_Date_EI__c = SYSTEM.TODAY() + 20;
+        programRec.Order_Number_EI__c = ordernum.Id;
+        programRec.Del_Typ_CEEDARS_EI__c = 'DirInstall';
+        programRec.Supported_Partner_Type_EI__c = '3P';
+        programRec.Partner_EI__c = Acc.id;
+        programRec.Implementer_EI__c = Acc.id;
+        insert programRec;
+        
+        EI_Vendor_Program_Eligibility__c ppe =  PM_EI_TestDataUtility.createVendorProgarmEligibility();
+        ppe.Eligible_Program_EI__c = programRec.Id;
+        ppe.Account_EI__c =  Acc1.Id;
+        insert ppe;
+        
+    	System.runAs ( partUser) {    
+        	// Create Opportunity
+        	opp = PM_EI_TestDataUtility.createOpportunites(acc1.id);
+        	Schema.DescribeSObjectResult pfSchemaResult = Schema.SObjectType.Opportunity;
+        	Map<String,Schema.RecordTypeInfo> mapPfTypeInfo = pfSchemaResult.getRecordTypeInfosByName();
+        	string strOpportunityRecType = mapPfTypeInfo.get('ESA Weatherization').getRecordTypeId();
+        	opp.Program_EI__c=programRec.id; 
+        	opp.RecordTypeId = strOpportunityRecType;
+        	opp.Payment_Approval_Stage_EI__c ='None';
+        	opp.Project_App_for_Pmt_EI__c ='No';
+        	opp.ImplementerAccount_EI__c = acc1.id;
+     		opp.StageName='Awaiting Implementer Approval';  
+        	insert opp;
+         	System.assertNotEquals(opp.id, null); 
+    	} 
+     	
+        System.runAs ( thisUser) {    
+        	// Create Product2
+        	measure = PM_EI_TestDataUtility.createMeasure();
+        	insert measure;
+         	System.assertNotEquals(measure.id, null); 
+        
+       		//Creating PriceBook record 
+        	PriceBook2 priceBookRec = PM_EI_TestDataUtility.createpriceBook();
+        	insert priceBookRec;
+        	System.assertNotEquals(priceBookRec.id, null); 
+        
+        	// Query Standard and Custom Price Books
+        	Pricebook2 customPriceBookRec = [select Id from Pricebook2 where id=:priceBookRec.Id];
+        	Id stdPriceBookRecId = Test.getStandardPricebookId();
+        
+        	//Creating Standard PBE record
+        	PriceBookEntry stdPbe = PM_EI_TestDataUtility.createStdPbe(stdPriceBookRecId,measure.Id);
+        	insert stdPbe;
+        	System.assertNotEquals(stdPbe.id, null); 
+        
+        	//Creating Custom PBE record
+        	custPbe = PM_EI_TestDataUtility.createCustPbe(customPriceBookRec.Id,measure.Id);
+        	insert custPbe;
+			System.assertNotEquals(custPbe.id, null); 
+     	} 
+     
+        System.runAs ( partUser) {    
+        	//Creating OLI records
+        	for(Integer i=1;i<=5;i++){
+            	OpportunityLineItem oppLineItem = new OpportunityLineItem();
+            	oppLineItem.OpportunityId = opp.Id;
+            	oppLineItem.PricebookEntryId = custPbe.Id;
+            	oppLineItem.UnitPrice = 70;
+            	oppLineItem.Quantity = 4;
+            	oppLineItem.Project_Measure_Cap_EI__c=1000000;
+            	oppLineItem.Measure_Cap_EI__c=10000;
+            	oppLineItem.Purchase_Price_EI__c=100;
+                oppLineItem.ESA_Total_Approved_Cost_EI__c = 100.00;
+            	oppLineItemLst.add(oppLineItem); 
+        	}
+        	insert oppLineItemLst; 
+            for (List<OpportunityLineItem> opplist : [Select id, ESA_Total_Approved_Cost_EI__c from OpportunityLineItem where Opportunity.id = : opp.id]) {
+                for (OpportunityLineItem opplist_1 : oppLineItemLst) {
+	                system.debug ('@@@Total cost1 in test class loop: ' + oppList_1.ESA_Total_Approved_Cost_EI__c);                                    
+                }
+            }
+        	System.assertNotEquals(oppLineItemLst[0].id, null); 
+
+            List<Opportunity> totalCostList = [select F_ESA_Total_Approved_Cost_EI__c from Opportunity where id = : opp.id];
+     		system.debug ('@@@Total cost in test class: ' + totalCostList[0].F_ESA_Total_Approved_Cost_EI__c);
+     		system.debug ('@@@Total cost1 in test class: ' + oppLineItemLst[0].ESA_Total_Approved_Cost_EI__c);
+     		system.debug ('@@@Total cost2 in test class: ' + oppLineItemLst[1].ESA_Total_Approved_Cost_EI__c);
+
+        }
+    }
+    /***************************************************************************************************     
+    * Method name  : ESAMassApprovalPageApproveTest
+    * Description  : 
+    * Parameter    : void
+ 	***************************************************************************************************/   
+    static testmethod void ESAMassApprovalPageApproveTest() {
+
+       	thisUser = [ select Id from User where Id = :UserInfo.getUserId() ];
+    	System.runAs ( thisUser) {       
+        	setUpData();
+    	}
+        
+        //Run as ESA Implementer
+        System.runAs(partUser) {
+      		//Test.setCurrentPageReference(new PageReference('Page.myPage'));
+
+			System.currentPageReference().getParameters().put('oppId', opp.id);
+			System.currentPageReference().getParameters().put('sortDir', 'toggle');
+            System.currentPageReference().getParameters().put('sortDirection', 'desc');
+
+            ESA_MassApproveProjectsController approvalClass = new ESA_MassApproveProjectsController ();
+            List<ESA_MassApproveProjectsController.wrapProject> wrapList = approvalClass.getWrapRecords();
+            approvalClass.OnChangeMethod(); 
+            approvalClass.sortBasedOnColumn();
+            wrapList[0].selectedApprove = true;
+            approvalClass.save();
+            approvalClass.Beginning();
+            approvalClass.Previous();
+            approvalClass.Next();
+            approvalClass.End();
+            approvalClass.getDisablePrevious();
+            approvalClass.getDisableNext();
+            approvalClass.getTotal_size();
+            approvalClass.getPageNumber();
+            approvalClass.getTotalPages();
+            approvalClass.cancel(); 
+          }
+    }
+ 
+    static testmethod void ESAMassApprovalPageApproveTest1() {
+
+    	thisUser = [ select Id from User where Id = :UserInfo.getUserId() ];
+    	System.runAs ( thisUser) {       
+        	setUpData();
+    	}
+            for (List<OpportunityLineItem> opplist : [Select id, ESA_Total_Approved_Cost_EI__c from OpportunityLineItem where Opportunity.id = : opp.id]) {
+                for (OpportunityLineItem opplist_1 : opplist) {
+	                system.debug ('@@@TEST Total cost1 in test class loop: ' + opplist_1.id + ' / ' + oppList_1.ESA_Total_Approved_Cost_EI__c);                                    
+                }
+            }
+           List<Opportunity> totalCostList = [select F_ESA_Total_Approved_Cost_EI__c from Opportunity where id = : opp.id];
+     		system.debug ('@@@TEST Total cost in test class: ' + totalCostList[0].F_ESA_Total_Approved_Cost_EI__c);
+        
+        //Run as Program Manager or Sys Admin!
+        System.runAs(thisUser) {
+			System.currentPageReference().getParameters().put('oppId', opp.id);
+			System.currentPageReference().getParameters().put('sortDir', 'toggle');
+            System.currentPageReference().getParameters().put('sortDirection', 'asc');
+              
+            ESA_MassApproveProjectsController approvalClass1 = new ESA_MassApproveProjectsController ();
+            List<ESA_MassApproveProjectsController.wrapProject> wrapList1 = approvalClass1.getWrapRecords();
+			ESA_massApproveprojectsController.wrapproject proj = new esa_massApproveprojectsController.wrapproject(opp, 1, 1);
+            proj.selectedApprove = true;
+            approvalClass1.lstWrapProject.add(proj);
+            approvalClass1.save();
+            approvalClass1.OnChangeMethod(); 
+            approvalClass1.sortBasedOnColumn();
+           // wrapList1[0].selectedApprove = true;
+            approvalClass1.save();
+            approvalClass1.Beginning();
+            approvalClass1.Previous();
+            approvalClass1.Next();
+            approvalClass1.End();
+            approvalClass1.getDisablePrevious();
+            approvalClass1.getDisableNext();
+            approvalClass1.getTotal_size();
+            approvalClass1.getPageNumber();
+            approvalClass1.getTotalPages();
+            approvalClass1.cancel(); 
+          }
+    }        
+}
