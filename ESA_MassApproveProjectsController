@@ -1,0 +1,451 @@
+/**************************************************************************************************
+Apex Controller Name :  ESA_MassApproveProjectsController
+Version              :  1.0
+Created Date         :  9/27/2017
+Function             :  This is a controller class for ESA_MassApproveProjects. It contains methods
+                        to perform pagination on Projects/Project Measures, wrapper class to display
+                        Project and its corresponding Project measures. It allows Implementers to
+                        perform the Initial approvals and it then designates the approved projects to
+                        Project Managers and other delegates to approve projects to create invoices.
+Story                :  STY-
+Work Task            :  TSK-
+
+Modification Log     :
+*--------------------------------------------------------------------------------------------------
+* Developer              Date                   Description
+*-------------------------------------------------------------------------------------------------
+* Balaram Nair           9/27/2017              Controller class for ESA Approve Projects page
+***************************************************************************************************/
+
+public with sharing class ESA_MassApproveProjectsController{
+
+   // Visualforce variables
+    public List<wrapProject> lstWrapProject{get;set;}
+    public List<SelectOption> implementerSelectList{get; set;}
+    public List<SelectOption> programsSelectList{get; set;}
+    public List<SelectOption> subContractorSelectList{get; set;}
+    public string selectProject{get;set;}
+    public string selectProgram{get;set;}
+    public string selectImplementer{get;set;}
+    public string selectSubContractor{get;set;}
+    public boolean showPicklist{get;set;}
+
+    public string sortDirection{get;set;}
+    public Integer total_size{set;get;}
+    public Map<Id,string> mapsubcontractor{get;set;}
+    public static final String PROJECT_STAGE_APPROVED_FOR_PAYMENT='10 - Approved for Payment - D&C';
+    public static final string PROJECT_STAGE_PENDING_APPROVAL ='14 - Pending Approval';
+    public static final string PROJECT_APPROVAL_STAGE_PL1='PL1 Approved';
+    public static final string PROJECT_APPROVAL_STAGE_DOA_COMPLETE='DOA Approval Complete';
+    public static final string PROJECT_APPROVAL_STAGE_DOA_PENDING='DOA Approval Pending';
+    public static final string PROJECT_FOR_PAYMENT='Yes';
+    public boolean implementerTrue = false;
+    public boolean programManagerTrue = false;
+    public id esaImplementer;
+
+    //Local variables
+    private List<Opportunity > oppProjectslst;
+    private List<Id> projId;
+    private Set<Id> recordTypeIdSet;
+    private Set<String> recordTypes = new Set<String>{'ESA_AC_Tune_Up', 'PGE_ESA_Application_Parent_EI', 'ESA_large_Appliance', 'ESA_R_R', 'ESA_Refrigerator_Leveraging', 'ESA_Weatherization'};
+
+    private Map<Id, Integer> mapDoubleDip;
+    private Integer counter=0;
+    private Integer list_size=25;
+    public set<string>setOppId{get;set;}
+
+    /**
+    * @Description: Constructor method,filter the Record based on where class
+    * @Parameter:
+    * @Return: None
+    * @USage:
+    **/
+
+    public ESA_MassApproveProjectsController(){
+
+        setOppId = new set<string>();
+
+        implementerSelectList = new List<SelectOption>();
+        programsSelectList = new List<SelectOption>();
+        subContractorSelectList = new List<SelectOption>();
+        implementerSelectList.add(new SelectOption('None', '--None--'));
+        programsSelectList.add(new SelectOption('None', '--None--'));
+
+        showPicklist = true;
+
+        list<profile>lstProfile = [select id from profile where name = 'ESA Implementer' limit 1];
+        if(!lstProfile.isEmpty() && lstProfile[0].Id == userinfo.getProfileId()){
+            showPicklist = false;
+            implementerTrue = True;
+          //  esaImplementer = userinfo.ID;
+        }
+        
+        //If not Implementer logged in then set Program manager logged in to true!
+        if (!implementertrue) programManagerTrue = True;
+
+        List<Account> esaImplementerList = [Select Id, Name, RecordType.DeveloperName from Account Where recordType.DeveloperName = 'ESA_Implementer' Order By Name];
+        for(Account esaImplementer : esaImplementerList) {
+            implementerSelectList.add(new SelectOption(esaImplementer.Id, esaImplementer.Name));
+        }
+//      List<Account> esasubcontractorList = [Select Id, Name, RecordType.DeveloperName from Account Where recordType.DeveloperName = 'ESA_Sub_Contractor' Order By Name];
+
+        List<EI_Program__c> esaProgramsList = [Select Id, Name, RecordType.DeveloperName from EI_Program__c Where recordType.DeveloperName = 'ESA_Program' Order By Name];
+        for(EI_Program__c esaPrograms : esaProgramsList) {
+            programsSelectList.add(new SelectOption(esaPrograms.Id, esaPrograms.Name));
+        }
+
+        //Fetch Sub contractors for the Implementer when Implementer is logged in!
+        list<user>lstUser =[select id,contactId from user where id =: userinfo.getUserId() limit 1];
+        if(lstUser != null && !lstUser.isEmpty() && lstUser[0].contactId != null){
+            list<contact>lstContact = [select account.id, account.name, id, name from contact where Id =: lstUser[0].contactId limit 1];
+            //When Program Manager is logged in then this list will be empty!
+            if(lstContact != null && !lstContact.isEmpty()){
+                implementerSelectList = new List<SelectOption>();
+                implementerSelectList.add(new SelectOption(lstContact[0].account.Id, lstContact[0].account.name));
+                selectImplementer =lstContact[0].account.id;
+            }
+        }
+        populateValues();
+    }
+
+    public void OnChangeMethod() {
+        getWrapRecords();
+        system.debug('####____');
+        counter = 0;
+    }
+
+       /**
+    * @Description: Sort method
+    * @Parameter:
+    * @Return: None
+    * @USage:
+    **/
+
+    public void sortBasedOnColumn() {
+        String sortDir = ApexPages.currentPage().getParameters().get('sortDir');
+        // sorting
+        if(sortDir == 'toggle'){
+            if(sortDirection == 'asc') {
+                sortDirection = 'desc';
+            }
+            else {
+                sortDirection = 'asc';
+            }
+        }
+    }
+
+       /**
+    * @Description: Submit Button method
+    * @Parameter:
+    * @Return: None
+    * @USage:
+    **/
+
+    public void save() {
+     system.debug ('@@@Save IN Method  : ' );
+     List<Opportunity > lstAppsToLock = new list<Opportunity >();
+        
+     try{
+      List<Opportunity > lstUpdateProject = new list<Opportunity >();
+        String errorMsg;
+        system.debug ('@@@Save Method  : ' );
+        system.debug ('@@@Save lstWrapProject : ' + lstWrapProject);
+        for(wrapProject wrapRecord : lstWrapProject) {
+
+          // When Project record is approved
+            if(wrapRecord.selectedApprove) {
+                // updating the fields
+
+                //Implementer Approval
+                if (implementerTrue) {
+                    system.debug ('@@@Save Implementer  : ' +  wrapRecord );
+                    wrapRecord.ecoProject.BypassValidationForProcessBuilder__c = True;
+                    wrapRecord.ecoProject.StageName = PROJECT_STAGE_PENDING_APPROVAL;
+                 // wrapRecord.ecoProject.Project_App_for_Pmt_EI__c = PROJECT_FOR_PAYMENT;
+                 // wraprecord.ecoProject.Payment_Approval_Stage_EI__c =PROJECT_APPROVAL_STAGE_PL1;
+                }
+
+                //Program Manager Approval
+                if (programManagerTrue) {
+                    system.debug ('@@@Save PM  : ' +  wrapRecord );
+					system.debug ('@@@Total approved cost: ' + wrapRecord.ecoProject.F_ESA_Total_Approved_Cost_EI__c);
+                    if(wrapRecord.ecoProject.F_ESA_Total_Approved_Cost_EI__c <= 100000) {
+                        system.debug ('@@@Amt < 100000' );
+                        // Updating the stage field if the amount is less than 100k
+                        //wrapRecord.ecoProject.StageName = PROJECT_STAGE_PAYMENT;
+                        wrapRecord.ecoProject.Project_App_for_Pmt_EI__c = PROJECT_FOR_PAYMENT;
+                        wraprecord.ecoProject.Payment_Approval_Stage_EI__c =PROJECT_APPROVAL_STAGE_DOA_COMPLETE;
+                        wrapRecord.ecoProject.StageName = PROJECT_STAGE_APPROVED_FOR_PAYMENT;
+                        wrapRecord.ecoProject.Approved_for_Payment_Date_EI__c = SYSTEM.TODAY();
+                        //Lock the Record!
+                        if (!Approval.isLocked(wrapRecord.ecoProject.ID)) {
+                            system.debug ('@@@ NOT LOCKED...');
+                            lstAppsToLock.add(wrapRecord.ecoProject);   
+                        }             
+                        
+                    }
+                    else {
+                        //Kick of Approval process from here through process builder!
+                        system.debug ('@@@Amt > 100000' );
+                        wrapRecord.ecoProject.Project_App_for_Pmt_EI__c = 'No';
+                        //wraprecord.ecoProject.Payment_Approval_Stage_EI__c =PROJECT_APPROVAL_STAGE_DOA_PENDING;
+                        wraprecord.ecoProject.Payment_Approval_Stage_EI__c =PROJECT_APPROVAL_STAGE_PL1;
+
+                        // Updating the stage field
+                        //wrapRecord.ecoProject.StageName = PROJECT_STAGE;
+                        //wraprecord.ecoProject.Payment_Approval_Stage_EI__c =PROJECT_APPROVAL_STAGE;
+                    }
+                 }
+               lstUpdateProject.add(wrapRecord.ecoProject);
+            }
+        }
+
+       if(!lstUpdateProject.isEmpty()) {
+          List<Database.SaveResult> updateResults = Database.update(lstUpdateProject, false);
+            string failedId = '';
+            for(Integer i=0;i<updateResults.size();i++){
+                if (updateResults.get(i).isSuccess()){
+                    updateResults.get(i).getId();
+                }
+                else if (!updateResults.get(i).isSuccess()) {
+                    Database.Error error = updateResults.get(i).getErrors().get(0);
+                    String failedDML = error.getMessage();
+                    failedId = '<a target="_blank" href="/'+lstUpdateProject.get(i).id+'">'+ lstUpdateProject.get(i).name + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><br/>';
+                    failedId = failedId + error.getMessage();
+                    ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error, failedId));
+                }
+                else {
+                    continue;
+                }
+            }
+        }
+     }
+      catch(Exception e){
+        EI_CreateErrorLog.upsertException(EI_CreateErrorLog.logException('ESA_MassApprovalProjectsController', e));
+      }
+      /*
+      try{
+      //Lock Records that is in Approved for Payment status!
+        if(!lstAppsToLock.isEmpty()) {
+            // Lock the Projects
+            system.debug('@@@@...In lock: '+lstAppsToLock );
+            Approval.LockResult[] lrList = Approval.lock(lstAppsToLock, false);
+            system.debug('@@@@...In lock complete');
+            string failedId = '';
+            // Iterate through each returned result            
+            for(Approval.LockResult lr : lrList) {
+                if (lr.isSuccess()) {
+                    // Operation was successful, so get the ID of the record that was processed
+                    System.debug('@@@Successfully locked Application with ID: ' + lr.getId());
+                }
+                else {
+                    // Operation failed, so get all errors
+                    for(Database.Error err : lr.getErrors()) {
+                        System.debug('@@@The following error has occurred.');
+                        System.debug(err.getStatusCode() + ': ' + err.getMessage());
+                        System.debug('@@@Application fields that affected this error: ' + err.getFields());
+                        String failedDML = err.getMessage();
+                        failedId = '<a target="_blank" href="/'+lr.id+'">' + '  .....Please click this link or right-click and open the link in new Tab to open the Project record: </a><br/>';
+                        failedId = failedId + err.getMessage();
+                        ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.error, failedId));                                        
+                    }
+                }
+            }            
+        }  
+      }
+      catch(Exception e){
+        EI_CreateErrorLog.upsertException(EI_CreateErrorLog.logException('ESA_MassApprovalProjectsController', e));
+      }
+     */       
+    }
+
+       /**
+    * @Description: Populate Values method
+    * @Parameter:
+    * @Return: None
+    * @USage:
+    **/
+
+   public void populateValues() {
+    try{
+        mapDoubleDip = new map<Id,Integer>();
+        mapsubcontractor = new map<Id,string>();
+        projId = new List<Id>();
+
+        if(sortDirection == null) {
+            sortDirection = 'asc';
+        }
+        oppProjectslst = new list<opportunity>();
+
+        String query = 'SELECT Id, Name, Site_Address_EI__c, Site_City__c, BypassValidationForProcessBuilder__c , ContractorAccount_EI__r.Name, (select id, Measure_Code_EI__c, Project_Measure_Status_EI__c, ESA_Total_Approved_Cost_EI__c, F_Unit_of_Equipment_Qty_EI__c from OpportunityLineItems where opportunityId IN : setOppId ), Main_Project_ID_EI__c, ImplementerAccount_EI__r.Name, F_ESA_Total_Approved_Cost_EI__c,Double_Dip_Status_EI__c,RecordType.DeveloperName, Program_EI__r.Processing_Workflow_EI__c,Overall_CIP_Status__c,Proj_Meas_Passed_Cnt_EI__c ,Total_Proj_Meas_Cnt_EI__c, Program_EI__c, Project_App_for_Pmt_EI__c,Payment_Approval_Stage_EI__c , Program_EI__r.name, StageName, CIP_Status_EI__c,Kickers_EI__c FROM Opportunity';
+//        String query = 'SELECT Id,Site_Address_EI__c, Site_City__c, Main_Project_ID_EI__c, ImplementerAccount_EI__r.Name, R_Total_Inc_Amount_EI__c,Double_Dip_Status_EI__c,RecordType.DeveloperName, Program_EI__r.Processing_Workflow_EI__c,Overall_CIP_Status__c,Proj_Meas_Passed_Cnt_EI__c ,Total_Proj_Meas_Cnt_EI__c, Program_EI__c, Project_App_for_Pmt_EI__c,Payment_Approval_Stage_EI__c , Program_EI__r.name, StageName, CIP_Status_EI__c,Kickers_EI__c FROM Opportunity';
+
+        String whereClause = ' where RecordType.DeveloperName IN : recordTypes '; // Filter Condition
+        system.debug('@@@where clause 1 '+ whereClause );
+
+        //If Implementer logged in then set stage name = Awaiting Implementer Approval
+        if (implementerTrue) {
+           whereClause = whereClause + ' AND  (StageName=\'Awaiting Implementer Approval\') ';
+        }
+        system.debug('@@@where clause Implementer '+ whereClause );
+
+        //If Program Manager logged in then set stage name = Pending Approval
+        if (programManagerTrue ) {
+           whereClause = whereClause + ' AND  (StageName=\'14 - Pending Approval\') ';
+        }
+        system.debug('@@where clause PM '+ whereClause );
+        system.debug('@@@opp id '+ setOppId);
+        system.debug('projectVal_____'+selectProgram);
+
+        if(selectProgram != null && selectProgram !='' && selectProgram != 'none') {
+            whereClause = whereClause + ' AND   Program_EI__c =: selectProgram ';
+        }
+
+        system.debug('@@@Selected Implementer_____'+selectImplementer);
+        //If Implementer is selected then fill the sub contractor drop down list with all contractors for the Implementer!
+        if(selectImplementer != null && selectImplementer !='' && selectImplementer != 'none') {
+           subcontractorSelectList = new List<SelectOption>();
+           map<Id,string>mapContractor = new map<Id,string>();
+
+           whereClause = whereClause + ' AND ImplementerAccount_EI__c =: selectImplementer ';
+           /*               
+           Generate List to hold all sub contractors under the Implementer.
+           Contractor Segment ==>>>> Region Segment ==>>>> Region >>> Implementer
+           */
+           list<ESA_Subcontractor_RegionSeg_Assoc__c>lstContractorSeg = [select id,name,SubContractor_accountID_EI__c,SubContractor_accountID_EI__r.name, Region_segmentID_EI__r.name from ESA_Subcontractor_RegionSeg_Assoc__c where Region_segmentID_EI__r.Region_EI__r.Implementer_Assigned__c =: selectImplementer limit 1000];     
+           if(lstContractorSeg != null && !lstContractorSeg.isEmpty()){
+                subContractorSelectList.add(new SelectOption('None', '--None--'));
+                for(ESA_Subcontractor_RegionSeg_Assoc__c esaContractorSegment : lstContractorSeg) {
+                    system.debug('@@@esa subcontractor is : '+esaContractorSegment.SubContractor_accountID_EI__c + ' / ' + esaContractorSegment.name);
+                                     
+                    mapContractor.put(esaContractorSegment.SubContractor_accountID_EI__c,esaContractorSegment.SubContractor_accountID_EI__r.name);
+                }
+                if(mapContractor != null && !mapContractor.isEmpty()){
+                    for(Id IdVal : mapContractor.keyset()){
+                        subcontractorSelectList.add(new SelectOption(IdVal, mapContractor.get(IdVal)));
+                    }
+                }
+            }
+        } else {
+            subcontractorSelectList = new List<SelectOption>();
+            selectSubContractor = '';
+        }
+
+        if(selectSubContractor != null && selectSubContractor !='' && selectSubContractor != 'none') {
+           whereClause = whereClause + ' AND ContractorAccount_EI__c =: selectSubcontractor ';
+        }
+
+        system.debug('param___'+ApexPages.currentPage().getParameters().get('oppId'));
+        if(string.isNotBlank(ApexPages.currentPage().getParameters().get('oppId'))){
+            if(setOppId.contains(ApexPages.currentPage().getParameters().get('oppId')))
+                setOppId.remove(ApexPages.currentPage().getParameters().get('oppId'));
+            else {
+               setOppId = new set<String>();
+               setOppId.add(ApexPages.currentPage().getParameters().get('oppId'));
+            }
+        }
+        system.debug('setOppId_____'+setOppId);
+
+        String countSOQL = 'select count() from Opportunity '+ whereClause;
+        total_size = Database.countQuery(countSOQL);
+        String finalQuery = query+whereClause;
+
+        system.debug('@@@query_____'+selectProject+'___'+finalQuery);
+        system.debug('@@@recordtypes_____'+recordtypes);
+
+        //oppProjectslst = (List<Opportunity >)database.query(finalQuery+' order by payee_name__c '+sortDirection+' Limit '+list_size+' Offset '+counter);
+        oppProjectslst = (List<Opportunity >)database.query(finalQuery);
+
+        system.debug('@@@1_____'+oppProjectslst.size());
+     }
+     catch(Exception e){
+         system.debug('exception________'+e.getMessage()+'____'+e.getLineNumber());
+         //EI_CreateErrorLog.upsertException(EI_CreateErrorLog.logException('AP_EI_MassApprovalPageController', e));
+     }
+    }
+
+    //Method called to create wrapper list
+    public List<wrapProject> getWrapRecords() {
+        lstWrapProject = new List<wrapProject>();
+        populateValues();
+
+        Integer i = 1;
+        for(Opportunity  projRecord : oppProjectslst) {
+            lstWrapProject.add(new wrapProject(projRecord, null, i));
+            i++;
+        }
+        return lstWrapProject;
+    }
+
+    //Wrapper Class
+    public class wrapProject{
+        public Opportunity  ecoProject{get; set;}
+        public Boolean selectedApprove {get; set;}
+        public integer doubleDipCount{get;set;}
+        public Integer serialNo{get;set;}
+
+        public wrapProject (Opportunity proj, integer count, integer srNo) {
+            ecoProject = proj;
+            selectedApprove = false;
+            doubleDipCount = count;
+            serialNo = srNo;
+        }
+    }
+
+    //Cancel button to refresh the same page
+    public pagereference cancel(){
+        pagereference pg = new pagereference('/apex/ESA_MassApproveProjects');
+        pg.setredirect(true);
+        return pg;
+    }
+
+    public void Beginning() {
+        counter = 0;
+    }
+
+    public void Previous() {
+        counter -= list_size;
+    }
+
+    public void Next() {
+        counter += list_size;
+    }
+
+    public void End() {
+        counter = total_size - math.mod(total_size, list_size);
+    }
+
+    public Boolean getDisablePrevious() {
+        if (counter>0) {
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+
+    public Boolean getDisableNext() {
+        if(counter + list_size < total_size) {
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+
+    public Integer getTotal_size() {
+        return total_size;
+    }
+
+    public Integer getPageNumber() {
+        return counter/list_size + 1;
+    }
+
+    public Integer getTotalPages() {
+        if (math.mod(total_size, list_size) > 0) {
+            return total_size/list_size + 1;
+        } else {
+            return (total_size/list_size);
+        }
+    }
+}
