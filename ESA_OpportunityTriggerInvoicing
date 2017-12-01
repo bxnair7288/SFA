@@ -1,0 +1,41 @@
+/**************************************************************************************************   
+Apex Util class Name :  ESA_OpportunityTriggerInvoicing
+Version              :  1.0                                                                          
+Created Date         :  10/15/2017                                                         
+Function             :  
+Story                :                                                                               
+Work Task            :                                                                               
+Modification Log     :                                                                               
+*--------------------------------------------------------------------------------------------------  
+* Developer            Date                   Description                                     
+* -------------------------------------------------------------------------------------------------  
+* Balaram Nair      10/15/2017               Created.
+***************************************************************************************************/
+trigger ESA_OpportunityTriggerInvoicing on Opportunity (after Update) {
+
+    if(trigger.isUpdate && trigger.isAfter){
+        
+        final String PROJECT_STAGE_APPROVED_FOR_PAYMENT = '10 - Approved for Payment - D&C';
+        final string PROJECT_STAGE_PENDING_APPROVAL     = '14 - Pending Approval';
+        List<RecordType> lstRecType = [select id, Name from RecordType where sobjectType = 'Opportunity' and isactive = True];
+        set<ID> setRecTypeID = new set<ID>();
+ 
+        for (RecordType recType : lstRecType) {
+            if (recType.Name.contains('ESA')) {
+                setRecTypeID.add (recType.ID);
+            }
+        }
+        
+        List<Opportunity> lstOpp = new List<Opportunity>();
+        if (!setRecTypeID.isEmpty()) {
+        	for(opportunity oppProject : trigger.New){
+                If (setRecTypeID.contains(oppProject.RecordTypeID) &&
+                  (oppProject.stageName == PROJECT_STAGE_PENDING_APPROVAL || oppProject.stageName == PROJECT_STAGE_APPROVED_FOR_PAYMENT)){
+                   lstOpp.add(oppProject);
+               }
+            }
+        
+        	if (!lstOpp.isEmpty()) ESA_OpportunityTriggerInvoicingHelper.afterUpdate(lstOpp, trigger.oldMap);
+        }
+    }
+}
